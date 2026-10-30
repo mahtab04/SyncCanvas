@@ -1,0 +1,9 @@
+/build/
+/bin/
+/boards/
+/board.json
+*.tmp
+__pycache__/
+.vs/
+.idea/
+CMakeUserPresets.json

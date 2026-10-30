@@ -1,0 +1,35 @@
+name: Build and format
+on: [push, pull_request]
+jobs:
+  server:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure headless build
+        run: cmake -S . -B build -DSYNCCANVAS_BUILD_CLIENT=OFF -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y xorg-dev libgl1-mesa-dev fonts-dejavu-core
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile desktop app
+        run: cmake --build build --target synccanvas_client --parallel 2
+  formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install clang-format==20.1.8
+      - name: Check C++ formatting
+        run: find include src -type f \( -name '*.hpp' -o -name '*.cpp' \) -print0 | xargs -0 clang-format --dry-run --Werror

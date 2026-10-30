@@ -1,0 +1,36 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "server",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/server",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SYNCCANVAS_BUILD_CLIENT": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "targets": [
+        "synccanvas_client",
+        "synccanvas_server"
+      ]
+    },
+    {
+      "name": "server",
+      "configurePreset": "server"
+    }
+  ]
+}
