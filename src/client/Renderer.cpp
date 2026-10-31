@@ -58,6 +58,7 @@ bool Renderer::init() {
     canvas_.init();
     for (const char *font :
          {"C:/Windows/Fonts/segoeui.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+          "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
           "/System/Library/Fonts/Supplemental/Arial.ttf"}) {
         if (canvas_.setFont(font, 16)) {
             hasFont_ = true;

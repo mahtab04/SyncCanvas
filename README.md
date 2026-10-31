@@ -57,6 +57,28 @@ Visual Studio places executables under `build/Release`. Use a Visual Studio deve
 
 On Ubuntu, install `xorg-dev libgl1-mesa-dev fonts-dejavu-core`. Font lookup supports Segoe UI on Windows, DejaVu Sans on Linux, and Arial on macOS. Windows MinGW builds were verified locally; Linux/MSVC workflows are included but their hosted results require running CI. macOS has not been verified.
 
+### Fedora desktop client
+
+Install the native build tools, GLFW development package, OpenGL development files,
+and DejaVu Sans, then build the client:
+
+~~~sh
+sudo dnf install git cmake ninja-build gcc-c++ glfw-devel mesa-libGL-devel dejavu-sans-fonts
+git clone https://github.com/mahtab04/SyncCanvas.git
+cd SyncCanvas
+cmake --preset release
+cmake --build --preset release --target synccanvas_client
+./build/release/synccanvas_client
+~~~
+
+Fedora font lookup includes `/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf`.
+The package paths are documented by [Fedora](https://packages.fedoraproject.org/pkgs/dejavu-fonts/dejavu-sans-fonts/fedora-43.html).
+For a Windows-hosted room, run the Windows server with `--bind 0.0.0.0`, then enter
+its LAN IPv4 address, the same port, and the same chosen room name in both clients.
+Use the configured access key if required. Windows executables do not run as native
+Fedora applications; build the Linux client above. Fedora runtime behavior has not
+been verified locally.
+
 ### Server-only build
 
 ~~~sh
