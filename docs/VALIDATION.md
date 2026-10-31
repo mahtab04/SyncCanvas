@@ -65,3 +65,25 @@ files pass clang-format checks. No automated test folder was added.
 These checks do not constitute a security audit. TLS, per-room authorization,
 per-IP/global admission controls, and hostile-network load testing remain future work.
 No test folder was added.
+
+## Offline drawing update (October 31, 2026)
+
+Release desktop/server builds and C++ formatting checks passed. Desktop checks
+verified drawing while disconnected, local export/import in an isolated writable
+working directory, undo of imported local shapes, and rejection of an additive
+1500-shape import while preserving the original local sketch. Room checks verified
+that joining an empty room did not upload local work, Add local created one room
+shape, and disconnect restored the local original. The review export was restored
+after the capacity check. No automated test folder was added.
+
+Local boards are in-memory, not automatically persisted on exit. Export requires a
+writable working directory. Long-stroke segmentation and abrupt network-loss paths
+were reviewed in code but not manually exercised in this iteration.
+
+## Explicit room selection (November 1, 2026)
+
+The Release client build and formatting checks passed. A plain launch was checked
+through the interface: the room field starts empty with a required-name placeholder,
+and clicking Join / create room keeps the app in Local Studio, focuses the room
+field, and explains the choice. The updated --help output documents the empty default.
+CLI --room remains available for users who intentionally preselect a named room.

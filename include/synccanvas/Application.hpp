@@ -12,6 +12,7 @@ class Application {
 
   private:
     NetworkClient network_;
+    Board localBoard_;
     ClientView view_;
     ClientLayout layout_;
     Renderer renderer_;
@@ -39,6 +40,9 @@ class Application {
     void importBoard();
     void cancelDraft();
     void resetBoardView();
+    bool canDraw() const;
+    bool commitShape(const Shape &shape);
+    void shareLocalBoard();
     void character(unsigned codepoint);
 };
 } // namespace synccanvas

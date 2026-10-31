@@ -2,7 +2,7 @@
 
 ### A shared canvas. A native C++ application. A real network between them.
 
-SyncCanvas is a collaborative desktop whiteboard built with **C++20**, **VectorGL**, and **standalone Asio**. Run one server, join the same room from multiple clients, and draw together. The server validates and orders edits; each client renders the same accepted board state.
+SyncCanvas is a collaborative desktop whiteboard built with **C++20**, **VectorGL**, and **standalone Asio**. Start drawing locally right away, or run one server and join the same room from multiple clients to draw together. The server validates and orders edits; each client renders the same accepted board state.
 
 ![SyncCanvas light canvas and floating drawing toolbar](docs/screenshot-light.jpg)
 
@@ -12,6 +12,7 @@ A ready-to-import diagram is included in `examples/network-board.json`. Copy it 
 
 ## What it does
 
+- Offline local boards with undo, import/export, and explicit sharing into a room.
 - Shared freehand strokes, rectangles, diamonds, ellipses, arrows, and lines with five stroke colors and adjustable widths.
 - Named rooms, live participant cursors, and per-session undo of your own shapes.
 - Optional server access key, masked entry, and a fixed join deadline.
@@ -43,7 +44,7 @@ Start the server, then two clients in separate terminals:
 ./build/release/synccanvas_client --name bob --room studio
 ~~~
 
-Click **Join room** in each client. On Windows, append `.exe`. A packaged Windows build is provided separately; start its server first and then its client. The client never starts a hidden server automatically.
+Click **Join / create room** in each client. Plain client launches start with an empty room field and stay local until you explicitly choose a room; the `--room studio` arguments above are an intentional example. On Windows, append `.exe`. A packaged Windows build is provided separately; start its server first and then its client. The client never starts a hidden server automatically.
 
 Without Ninja, use a default generator:
 
@@ -74,7 +75,19 @@ synccanvas_server --bind 0.0.0.0 --port 8765 --data boards
 synccanvas_client --host SERVER_LAN_ADDRESS --port 8765 --room studio --name alice
 ~~~
 
-Use the same room name in each client. Each room keeps its saved drawings across reconnects and server restarts. For a blank board, disconnect, enter a new room name, then join again. Connection fields are locked while connected or retrying; leaving a room clears its displayed canvas without deleting saved drawings. Your network/firewall must permit the selected port; the application does not modify firewall settings. Do not expose this listener directly to the public internet.
+Use the same room name in each client. Each room keeps its saved drawings across reconnects and server restarts. For a blank board, disconnect, enter a new room name, then join again. Connection fields are locked while connected or retrying; leaving a room restores your separate local board without deleting room drawings. Your network/firewall must permit the selected port; the application does not modify firewall settings. Do not expose this listener directly to the public internet.
+
+### Draw without connecting
+
+Launch the client and draw immediately in **Local Studio**. Undo, Import, and Export
+work without a server. The local board remains in memory when you join a room;
+the room snapshot is displayed separately. **Add local** explicitly adds a copy of
+your local shapes to the connected room, preserving the original. Disconnect returns
+to your local board. During reconnection, use Disconnect to resume local drawing.
+
+Use Export before closing to save local work to `board.json` in the client's working
+directory. Launch from a writable directory. Local work is not automatically saved,
+merged, or uploaded on connect.
 
 ### Optional access key
 
@@ -90,7 +103,7 @@ per-room permissions. See [security details](SECURITY.md).
 | Control | Action |
 |---|---|
 | Server / port / room / name / access key fields | Click to edit before connecting; Tab moves between fields |
-| Join room / Disconnect | Connect or stop reconnection attempts |
+| Join / create room / Disconnect | Join the entered room name (or create it if new), or disconnect |
 | Floating icon toolbar | Choose rectangle, diamond, ellipse, arrow, line, or freehand |
 | 1-6 or R / D / E / A / L / P | Switch drawing tools |
 | Left mouse drag | Draw on the board |
@@ -101,10 +114,11 @@ per-room permissions. See [security details](SECURITY.md).
 | + / - buttons or [ / ] | Set stroke width from 1 to 16 |
 | Undo button or Ctrl+Z | Remove your latest committed shape |
 | Export or Ctrl+S | Write the visible board to `board.json` in the working directory |
-| Import or Ctrl+O | Add shapes from `board.json` to the current room |
+| Import or Ctrl+O | Add shapes from `board.json` to the visible local board or room |
+| Add local (while connected) | Add a copy of the local drawing to the current room |
 | Escape | Cancel a draft, leave text editing, or close the app |
 
-Names and room IDs accept ASCII letters, digits, underscores, and hyphens. Import is additive, not a replacement operation, and is throttled to 40 shapes per second. An interrupted import can be partial. Export atomically replaces an existing `board.json` only after the new file has been fully written; a failed export preserves the previous file. Server autosaves are separate. Imports and room archives are limited to 16 MiB while reading.
+Names and room IDs accept ASCII letters, digits, underscores, and hyphens. Import is additive, not a replacement operation. Local imports validate the combined board before changing it. Room imports and Add local are throttled to 40 shapes per second and can be partial if interrupted. Repeating Add local adds another copy. Export atomically replaces an existing `board.json` only after the new file has been fully written; a failed export preserves the previous file. Server autosaves are separate. Imports and room archives are limited to 16 MiB while reading.
 
 ## Project structure
 
@@ -138,7 +152,7 @@ See [local validation](docs/VALIDATION.md) for historical build and interface ch
 - Undo ownership is tied to a live connection. Reconnecting gets a new identity; saved shapes load with archive ownership.
 - Autosave runs every two seconds on the server event loop; disk stalls can delay network work. A crash can lose changes since the last successful save.
 - Up to 128 connections, 32 loaded rooms, 32 participants per room, 1500 shapes and 40,000 points per board. Loaded rooms remain in memory until restart.
-- A reconnect replaces local state with a server snapshot. Offline edits are not buffered or merged.
+- A reconnect replaces the visible room board with a server snapshot. The separate local board is kept in memory and never uploaded automatically. Local work must be exported before closing the app; local autosave is not implemented.
 - Each server is a single authoritative process; clustering and durable operation logs are future work.
 
 ## License and dependencies

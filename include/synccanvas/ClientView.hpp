@@ -12,10 +12,12 @@ struct RemoteCursor {
     std::optional<Shape> preview;
 };
 struct ClientView {
-    std::array<std::string, 5> fields{"127.0.0.1", "8765", "studio", "designer", ""};
+    std::array<std::string, 5> fields{"127.0.0.1", "8765", "", "designer", ""};
     int activeField = -1;
     bool fieldSelected = false, showGrid = true, accessControlled = false;
-    std::string tool = "pen", status = "Start the server, then join a room.", selfId;
+    std::string tool = "pen", status = "Draw locally now. Export to save, or join a room to collaborate.",
+                selfId;
+    std::size_t localShapeCount = 0;
     std::string hoveredTool;
     std::uint32_t color = inkColors[0];
     float strokeWidth = 3;

@@ -45,4 +45,4 @@ Incoming client frames are also limited to 512 KiB/second with a 2 MiB burst. By
 {"format":"synccanvas","version":1,"shapes":[{"kind":"rect","color":4644797,"width":3,"points":[[10,20],[100,200]]}]}
 ~~~
 
-Saved documents may include IDs/owners, but those are not trusted when loading. Import is validated before queueing and sends ordinary draw operations; it is additive and is not a transactional network batch.
+Saved documents may include IDs/owners, but those are not trusted when loading. Room imports and Add local validate capacity before queueing and send ordinary draw operations; they are additive and are not transactional network batches. Offline drawing and offline import/undo do not send protocol operations. Local imports validate the combined board transactionally before replacing local state.

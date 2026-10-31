@@ -45,3 +45,31 @@ Room data is loaded lazily on the first join. Both room loading and desktop impo
 ## Extending the app
 
 Add new protocol operations in Protocol validation, Board model rules, Server dispatch, and client event handling together. Verify model invariants and replication behavior when changing these operations. Future authenticated identity must replace connection-based ownership; public hosting also needs TLS, authorization, operational monitoring, and a persistence worker/journal.
+
+## Local and room boards
+
+Application owns a separate Board for local work, using the same geometry, shape,
+and point limits as the server. Disconnected input commits locally with local
+ownership, and local undo removes the latest local shape. Local imports build a
+combined candidate Board first, so an invalid or over-capacity import changes nothing.
+
+Connecting keeps that Board in memory while a server snapshot replaces only the
+visible room state. Disconnect restores the local shapes and revision. Room snapshots,
+errors, and reconnects never overwrite the local Board. Drawing and import/export are
+paused during the connection/retry phase; Disconnect resumes local editing.
+
+Add local copies local shapes into the existing throttled import queue. It sends
+ordinary draw operations, with fresh IDs and ownership assigned by the server. This
+is an explicit additive copy, not automatic merge/replay. Interruption can leave a
+partial room copy, and repeating the action can duplicate shapes. Local originals
+remain unchanged. Export saves whichever board is visible using atomic replacement;
+local work is otherwise memory-only and must be exported before closing.
+
+## Explicit room selection
+
+A plain desktop launch leaves the room name empty. Join attempts with an empty or
+invalid room name focus the room field and return before resetting the local view
+or starting network work. A valid name is an explicit join-or-create request;
+`--room ROOM` may prefill it for scripted launches. Existing names restore their
+saved room boards, while new names start empty. The server never selects a room
+for a client, and independent launches do not inherit a previous room implicitly.

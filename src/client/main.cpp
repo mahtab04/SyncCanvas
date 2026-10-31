@@ -3,14 +3,15 @@
 #include <iostream>
 int main(int argc, char **argv) {
     try {
-        std::array<std::string, 5> fields{"127.0.0.1", "8765", "studio", "designer", ""};
+        std::array<std::string, 5> fields{"127.0.0.1", "8765", "", "designer", ""};
         if (const auto *key = std::getenv("SYNCCANVAS_ACCESS_KEY"))
             fields[4] = key;
         for (int i = 1; i < argc; ++i) {
             std::string option = argv[i];
             if (option == "--help") {
-                std::cout << "synccanvas_client [--host 127.0.0.1] [--port 8765] [--room studio] [--name "
-                             "designer]\nSet SYNCCANVAS_ACCESS_KEY or use the access-key field for protected "
+                std::cout << "synccanvas_client [--host 127.0.0.1] [--port 8765] [--room ROOM] [--name "
+                             "designer]\nNo room is selected by default. Draw locally or enter a room name.\n"
+                             "Set SYNCCANVAS_ACCESS_KEY or use the access-key field for protected "
                              "servers.\n";
                 return 0;
             }

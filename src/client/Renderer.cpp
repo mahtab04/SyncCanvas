@@ -30,13 +30,16 @@ std::vector<Button> ClientLayout::buttons(const ClientView &view) const {
     std::vector<Button> result{
         {{22, 380, 228, 38},
          "connect",
-         view.online || view.connecting || view.reconnect ? "Disconnect" : "Join room"},
+         view.online || view.connecting || view.reconnect ? "Disconnect" : "Join / create room"},
         {{22, 592, 228, 36}, "undo", "Undo my last shape"},
         {{22, 642, 228, 36}, "export", "Export board.json"},
         {{22, 687, 228, 36}, "import", "Import board.json"},
         {{22, 749, 48, 32}, "thinner", "-"},
         {{202, 749, 48, 32}, "thicker", "+"}};
     result.push_back({{float(width - 166), 110, 140, 36}, "grid", "Grid  G", view.showGrid});
+    if (view.online && view.localShapeCount > 0)
+        result.push_back(
+            {{300, 110, 180, 36}, "share_local", "Add local (" + std::to_string(view.localShapeCount) + ")"});
     const auto bar = toolbar();
     for (std::size_t i = 0; i < drawingTools.size(); ++i) {
         const auto &tool = drawingTools[i];
@@ -125,7 +128,7 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     canvas_.strokeRoundedRect(10, 10, 252, float(layout.height - 20), 14);
     text("S Y N C C A N V A S", 22, 42, 0x6965db);
     text("Ideas, on the same page.", 22, 68, 0x868e96);
-    const char *labels[]{"SERVER", "PORT", "ROOM", "YOUR NAME", "ACCESS KEY"};
+    const char *labels[]{"SERVER", "PORT", "ROOM NAME (required)", "YOUR NAME", "ACCESS KEY"};
     const bool fieldsLocked = view.online || view.connecting || view.reconnect;
     for (int i = 0; i < 5; ++i) {
         auto box = layout.field(i);
@@ -133,8 +136,11 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
         canvas_.setFillColor(Color::hex(view.activeField == i ? 0xf3f0ff : 0xf1f3f5));
         canvas_.fillRoundedRect(box.x, box.y, box.w, box.h, 5);
         auto value = view.fields[i];
-        if (i == 4)
-            value = value.empty() ? "Optional" : std::string(std::min<std::size_t>(value.size(), 20), '*');
+        const bool placeholder = value.empty() && view.activeField != i && (i == 2 || i == 4);
+        if (i == 4 && !value.empty())
+            value = std::string(std::min<std::size_t>(value.size(), 20), '*');
+        if (placeholder)
+            value = i == 2 ? "Choose a room name" : "Optional";
         const std::size_t visible = i == 0 ? 16 : i == 1 ? 5 : 24;
         if (value.size() > visible)
             value = "..." + value.substr(value.size() - (visible - 3));
@@ -143,7 +149,7 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
             canvas_.fillRoundedRect(box.x + 7, box.y + 5, box.w - 14, box.h - 10, 3);
         }
         text(value + (!fieldsLocked && view.activeField == i ? "|" : ""), box.x + 10, box.y + 23,
-             fieldsLocked ? 0x868e96 : 0x343a40);
+             fieldsLocked || placeholder ? 0x868e96 : 0x343a40);
     }
     text("DRAWING TOOL", 22, 447, 0x868e96);
     for (const auto &tool : drawingTools)
@@ -201,13 +207,15 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     text("Ctrl+Z  undo   [ ]  width", 22, 807, 0x868e96);
     text("Ctrl+S  export   Ctrl+O  import", 22, 830, 0x868e96);
     text(view.online ? (view.accessControlled ? "Key required / plain TCP" : "Open server / plain TCP")
-                     : "Local / trusted LAN",
+                     : "Local / export to save",
          22, float(layout.height - 46), 0x868e96);
     text("Draw. Share. Think together.", 22, float(layout.height - 23), 0x868e96);
-    text(view.online ? "LIVE WORKSPACE" : "A LITTLE SPACE FOR BIG IDEAS", 300, 41, 0x6965db);
-    text("Room / " + view.fields[2], 300, 72, 0x343a40);
-    text(std::to_string(view.peers.size()) + " collaborators    |    " + std::to_string(view.shapes.size()) +
-             " shapes",
+    const bool joining = view.connecting || (view.reconnect && !view.online);
+    text(view.online ? "LIVE ROOM" : joining ? "JOINING ROOM" : "LOCAL STUDIO", 300, 41, 0x6965db);
+    text(view.online || joining ? "Room / " + view.fields[2] : "Your local board / Export to save", 300, 72,
+         0x343a40);
+    text((view.online ? std::to_string(view.peers.size()) + " collaborators    |    " : "") +
+             std::to_string(view.shapes.size()) + (view.online ? " room shapes" : " local shapes"),
          float(layout.width - 370), 72, 0x868e96);
     canvas_.setStrokeColor(Color::hex(0xe2e2eb));
     canvas_.setLineWidth(1);
@@ -242,8 +250,11 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     const bool remoteDrawing = std::any_of(view.peers.begin(), view.peers.end(),
                                            [](const auto &peer) { return peer.second.preview.has_value(); });
     if (view.shapes.empty() && !view.draft && !remoteDrawing) {
-        text(view.online ? "Choose a tool and draw. Invite someone to the same room."
-                         : "Join a room to start drawing together.",
+        text(view.online ? (view.localShapeCount > 0
+                                ? "Draw together. Use Add local to copy your offline sketch into this room."
+                                : "Choose a tool and draw. Invite someone to the same room.")
+             : joining   ? "Loading the room. Your local board is kept separate."
+                         : "Start drawing here. No connection needed. Export to save your work.",
              300, 375, 0x868e96);
     }
     canvas_.restore();

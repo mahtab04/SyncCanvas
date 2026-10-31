@@ -1,7 +1,7 @@
 # Product direction
 
-SyncCanvas is a shared drawing studio: enter a room, sketch together, and return to
-the same board later. The current native client prioritizes live geometry and a
+SyncCanvas is a drawing studio: sketch locally immediately, explicitly share a copy
+into a room, and return to the shared board later. The current native client prioritizes live geometry and a
 small set of predictable tools.
 
 ## Implemented in this iteration
@@ -13,6 +13,12 @@ small set of predictable tools.
   indication that the transport is still unencrypted.
 - Join deadlines, inbound byte limits, and generic operation errors reduce common
   resource-exhaustion and accidental-information-disclosure paths.
+
+## Offline drawing
+
+Local drawing, local undo, transactional additive import, export, and explicit Add
+local copying are implemented. Local boards survive room switches in memory. Local
+autosave and automatic recovery after closing remain future work.
 
 ## Next: editing and navigation
 

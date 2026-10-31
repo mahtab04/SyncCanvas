@@ -44,8 +44,16 @@ void Application::character(unsigned codepoint) {
     }
 }
 void Application::connect() {
-    if (!validIdentifier(view_.fields[2]) || !validIdentifier(view_.fields[3], 24) ||
-        view_.fields[0].empty()) {
+    if (!validIdentifier(view_.fields[2])) {
+        view_.activeField = 2;
+        view_.fieldSelected = !view_.fields[2].empty();
+        view_.status =
+            view_.fields[2].empty()
+                ? "Choose a room name first. Existing names join a saved room; new names create one."
+                : "Room name: 1-32 letters, numbers, _ or -.";
+        return;
+    }
+    if (!validIdentifier(view_.fields[3], 24) || view_.fields[0].empty()) {
         view_.status = "Enter a server, room, and name. Room/name: letters, numbers, _ or -.";
         return;
     }
@@ -79,7 +87,7 @@ void Application::action(const std::string &actionName) {
             view_.reconnect = false;
             offlineReason_.clear();
             resetBoardView();
-            view_.status = "Disconnected. Change the room name to join a different board.";
+            view_.status = "Local board restored. Draw here or join another room.";
             network_.disconnect();
         } else
             connect();
@@ -89,6 +97,13 @@ void Application::action(const std::string &actionName) {
     } else if (actionName == "undo") {
         if (view_.online)
             network_.send({{"type", "undo"}});
+        else if (canDraw()) {
+            localBoard_.undo("local");
+            resetBoardView();
+            view_.status = "Local undo. Export to save your board.";
+        }
+    } else if (actionName == "share_local") {
+        shareLocalBoard();
     } else if (actionName == "export")
         exportBoard();
     else if (actionName == "import")
@@ -106,27 +121,38 @@ void Application::action(const std::string &actionName) {
 }
 void Application::exportBoard() {
     try {
-        if (!view_.online || snapshotting_)
-            throw std::runtime_error("Join a room before exporting");
+        if (snapshotting_ || view_.connecting || (view_.reconnect && !view_.online))
+            throw std::runtime_error("Wait for the room to load, or disconnect to export your local board");
         Json shapes = Json::array();
         for (const auto &shape : view_.shapes)
             shapes.push_back(shapeJson(shape));
         writeDocumentFile(
             exportPath_, Json{{"format", "synccanvas"}, {"version", protocolVersion}, {"shapes", shapes}}, 2);
-        view_.status = "Exported board.json to the current working directory.";
+        view_.status = view_.online ? "Exported the room board to board.json."
+                                    : "Exported the local board to board.json.";
     } catch (const std::exception &error) {
         view_.status = error.what();
     }
 }
 void Application::importBoard() {
     try {
-        if (!view_.online)
-            throw std::runtime_error("Join a room before importing");
+        if (!canDraw())
+            throw std::runtime_error("Wait for the room to load, or disconnect to import locally");
         if (!importQueue_.empty())
             throw std::runtime_error("An import is already running");
         auto document = readDocumentFile(exportPath_);
         Board candidate;
         candidate.load(document);
+        if (!view_.online) {
+            // Validate the entire additive import before replacing the local board.
+            Board combined = localBoard_;
+            for (const auto &shape : candidate.shapes())
+                combined.add(shape, "local");
+            localBoard_ = std::move(combined);
+            resetBoardView();
+            view_.status = "Imported into your local board. Nothing was sent to a room.";
+            return;
+        }
         std::size_t points = 0;
         for (const auto &shape : view_.shapes)
             points += shape.points.size();
@@ -141,6 +167,48 @@ void Application::importBoard() {
         view_.status = error.what();
     }
 }
+bool Application::canDraw() const {
+    return view_.online || (!view_.connecting && !view_.reconnect);
+}
+bool Application::commitShape(const Shape &shape) {
+    if (view_.online) {
+        network_.send({{"type", "draw"}, {"shape", shapeJson(shape)}});
+        return true;
+    }
+    if (!canDraw())
+        return false;
+    try {
+        localBoard_.add(shape, "local");
+        view_.shapes = localBoard_.shapes();
+        view_.revision = localBoard_.revision();
+        view_.localShapeCount = localBoard_.shapes().size();
+        view_.status = "Drawing locally. Export to save; joining a room keeps this board separate.";
+        return true;
+    } catch (const std::exception &error) {
+        view_.status = error.what();
+        return false;
+    }
+}
+void Application::shareLocalBoard() {
+    try {
+        if (!view_.online)
+            throw std::runtime_error("Join a room before adding a copy of your local drawing");
+        if (!importQueue_.empty())
+            throw std::runtime_error("Wait for the current import to finish");
+        std::size_t points = 0;
+        for (const auto &shape : view_.shapes)
+            points += shape.points.size();
+        for (const auto &shape : localBoard_.shapes())
+            points += shape.points.size();
+        if (view_.shapes.size() + localBoard_.shapes().size() > maxShapes || points > 40000)
+            throw std::runtime_error("Local drawing would exceed room capacity");
+        for (const auto &shape : localBoard_.shapes())
+            importQueue_.push_back(shape);
+        view_.status = "Adding a copy of your local drawing to this room. The local original is kept.";
+    } catch (const std::exception &error) {
+        view_.status = error.what();
+    }
+}
 void Application::cancelDraft() {
     if (view_.draft && view_.online)
         network_.send({{"type", "preview"}, {"shape", nullptr}});
@@ -149,12 +217,13 @@ void Application::cancelDraft() {
 }
 void Application::resetBoardView() {
     view_.online = false;
-    view_.shapes.clear();
+    view_.shapes = localBoard_.shapes();
+    view_.localShapeCount = localBoard_.shapes().size();
     view_.snapshot.clear();
     view_.peers.clear();
     view_.selfId.clear();
     view_.accessControlled = false;
-    view_.revision = 0;
+    view_.revision = localBoard_.revision();
     view_.draft.reset();
     importQueue_.clear();
     previewDirty_ = false;
@@ -174,7 +243,8 @@ void Application::processEvents() {
                 view_.connecting = false;
                 resetBoardView();
                 view_.status = event.at("message").get<std::string>() +
-                               (view_.reconnect ? ". Retrying in 3 seconds." : "");
+                               (view_.reconnect ? ". Retrying in 3 seconds. Disconnect to draw locally."
+                                                : ". Your local board is ready.");
                 if (!offlineReason_.empty())
                     view_.status = std::exchange(offlineReason_, {});
                 nextReconnect_ = glfwGetTime() + 3;
@@ -352,6 +422,9 @@ void Application::pointer(double mx, double my, int phase) {
                 if (!view_.online && !view_.connecting && !view_.reconnect) {
                     view_.activeField = i;
                     view_.fieldSelected = false;
+                    if (i == 2)
+                        view_.status =
+                            "Choose a room: an existing name joins its board; a new name creates one.";
                 } else
                     view_.status = "Disconnect before changing the server, room, or name.";
                 handled = true;
@@ -364,7 +437,7 @@ void Application::pointer(double mx, double my, int phase) {
                 handled = true;
                 break;
             }
-        if (!handled && view_.online && layout_.onBoard(x, y) && importQueue_.empty()) {
+        if (!handled && canDraw() && layout_.onBoard(x, y) && importQueue_.empty()) {
             auto point = layout_.toBoard(x, y);
             Shape shape;
             shape.kind = view_.tool;
@@ -389,7 +462,10 @@ void Application::pointer(double mx, double my, int phase) {
                 if (draft.points.size() < maxPoints)
                     draft.points.push_back(point);
                 else {
-                    network_.send({{"type", "draw"}, {"shape", shapeJson(draft)}});
+                    if (!commitShape(draft)) {
+                        cancelDraft();
+                        return;
+                    }
                     draft.points = {previous, point};
                 }
             }
@@ -397,8 +473,7 @@ void Application::pointer(double mx, double my, int phase) {
             draft.points.back() = point;
     }
     if (phase == 2 && view_.draft) {
-        if (view_.online)
-            network_.send({{"type", "draw"}, {"shape", shapeJson(*view_.draft)}});
+        commitShape(*view_.draft);
         view_.draft.reset();
         previewDirty_ = false;
     }
