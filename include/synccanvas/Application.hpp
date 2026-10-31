@@ -7,7 +7,7 @@ struct GLFWwindow;
 namespace synccanvas {
 class Application {
   public:
-    explicit Application(std::array<std::string, 4> fields);
+    explicit Application(std::array<std::string, 5> fields);
     int run();
 
   private:
@@ -20,6 +20,7 @@ class Application {
     bool keyEvents_[350]{}, undoRequested_ = false;
     bool exportRequested_ = false, importRequested_ = false;
     int requestedTool_ = -1;
+    std::string offlineReason_;
     double lastCursor_ = 0, nextReconnect_ = 0;
     double pointerX_ = 0, pointerY_ = 0;
     bool snapshotting_ = false;

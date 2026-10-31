@@ -14,6 +14,8 @@ A ready-to-import diagram is included in `examples/network-board.json`. Copy it 
 
 - Shared freehand strokes, rectangles, diamonds, ellipses, arrows, and lines with five stroke colors and adjustable widths.
 - Named rooms, live participant cursors, and per-session undo of your own shapes.
+- Optional server access key, masked entry, and a fixed join deadline.
+- Shift-constrained geometry, a grid toggle, and select-all/paste for connection fields.
 - Server-assigned IDs and monotonically increasing board revisions.
 - Full board snapshots on join and reconnect, with automatic retry after connection loss.
 - JSON import/export and periodic server-side persistence with atomic file replacement.
@@ -24,7 +26,7 @@ Drawing is shown locally while dragging and committed to everyone on release. Lo
 
 ## Quick start
 
-Requires CMake 3.24+, Git, a C++20 compiler, and internet access on the first configure. The desktop client needs an OpenGL 3.3 GPU and a supported system font. Dependency revisions are pinned in CMake.
+Requires CMake 3.24+, Git, a C++20 compiler, and internet access on the first configure. The desktop client needs an OpenGL 3.3 GPU and a supported system font. Dependency revisions are pinned in CMake. Dependency clang-tidy checks are opt-in with `-DSYNCCANVAS_LINT_DEPENDENCIES=ON`; the project formatting check remains separate.
 
 With Ninja installed:
 
@@ -74,15 +76,27 @@ synccanvas_client --host SERVER_LAN_ADDRESS --port 8765 --room studio --name ali
 
 Use the same room name in each client. Each room keeps its saved drawings across reconnects and server restarts. For a blank board, disconnect, enter a new room name, then join again. Connection fields are locked while connected or retrying; leaving a room clears its displayed canvas without deleting saved drawings. Your network/firewall must permit the selected port; the application does not modify firewall settings. Do not expose this listener directly to the public internet.
 
+### Optional access key
+
+Set `SYNCCANVAS_ACCESS_KEY` before starting the server to require a shared key.
+The value must contain 16-128 letters, digits, underscores, or hyphens; use a random
+value rather than a password. Clients can read it from the same environment variable
+or paste it into the masked Access key field. Leave the field blank for open servers.
+The key gates all rooms on that server; it does not encrypt the connection or provide
+per-room permissions. See [security details](SECURITY.md).
+
 ## Controls
 
 | Control | Action |
 |---|---|
-| Server / port / room / name fields | Click to edit before connecting; Tab moves between fields |
+| Server / port / room / name / access key fields | Click to edit before connecting; Tab moves between fields |
 | Join room / Disconnect | Connect or stop reconnection attempts |
 | Floating icon toolbar | Choose rectangle, diamond, ellipse, arrow, line, or freehand |
 | 1-6 or R / D / E / A / L / P | Switch drawing tools |
 | Left mouse drag | Draw on the board |
+| Shift + drag | Square/circle/regular diamond; line/arrow angles snap to 45 degrees |
+| Grid button or G | Toggle the canvas dot grid |
+| Ctrl+A / Ctrl+V in a field | Select all / paste a validated value |
 | Color swatches | Choose ink |
 | + / - buttons or [ / ] | Set stroke width from 1 to 16 |
 | Undo button or Ctrl+Z | Remove your latest committed shape |
@@ -112,7 +126,7 @@ docs/                    Architecture and protocol documentation
 .github/workflows/       Build, test, and formatting checks
 ~~~
 
-The application uses composition: transport does not know about rooms, the board does not know about sockets, and the renderer does not mutate shared board state. See [architecture](docs/ARCHITECTURE.md) and [protocol](docs/PROTOCOL.md) for ownership, threading, and failure behavior.
+The application uses composition: transport does not know about rooms, the board does not know about sockets, and the renderer does not mutate shared board state. See [product direction](docs/ROADMAP.md), [architecture](docs/ARCHITECTURE.md), and [protocol](docs/PROTOCOL.md) for ownership, threading, and failure behavior.
 
 ## Verification
 
@@ -120,7 +134,7 @@ See [local validation](docs/VALIDATION.md) for historical build and interface ch
 
 ## Current boundaries
 
-- No accounts, TLS, room passwords, browser client, text objects, selection, or collaborative object editing. The icon toolbar is inspired by diagramming apps; it does not provide Excalidraw file compatibility.
+- No accounts, TLS, per-room passwords, browser client, text objects, selection, or collaborative object editing. The icon toolbar is inspired by diagramming apps; it does not provide Excalidraw file compatibility.
 - Undo ownership is tied to a live connection. Reconnecting gets a new identity; saved shapes load with archive ownership.
 - Autosave runs every two seconds on the server event loop; disk stalls can delay network work. A crash can lose changes since the last successful save.
 - Up to 128 connections, 32 loaded rooms, 32 participants per room, 1500 shapes and 40,000 points per board. Loaded rooms remain in memory until restart.

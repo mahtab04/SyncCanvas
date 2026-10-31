@@ -34,10 +34,17 @@ void Server::accept() {
                 socket.close(ignored);
             } else {
                 auto id = std::to_string(nextPeer_++);
-                auto connection = std::make_shared<Connection>(std::move(socket));
+                auto connection = std::make_shared<Connection>(std::move(socket), 512 * 1024);
                 Peer peer;
                 peer.id = id;
                 peer.connection = connection;
+                peer.joinDeadline = std::make_unique<asio::steady_timer>(io_);
+                peer.joinDeadline->expires_after(std::chrono::seconds(10));
+                peer.joinDeadline->async_wait([this, id](asio::error_code deadlineError) {
+                    auto it = peers_.find(id);
+                    if (!deadlineError && it != peers_.end() && !it->second.joined)
+                        it->second.connection->close("Join timed out");
+                });
                 peers_.emplace(id, std::move(peer));
                 connection->start([this, id](const Json &value) { message(id, value); },
                                   [this, id](const std::string &) { disconnect(id); });
@@ -51,6 +58,12 @@ void Server::accept() {
 void Server::join(Peer &peer, const Json &value) {
     if (peer.joined)
         throw std::invalid_argument("Already joined");
+    if (!config_.accessKey.empty()) {
+        const auto key = value.find("access_key");
+        if (key == value.end() || !key->is_string() ||
+            key->get_ref<const std::string &>() != config_.accessKey)
+            throw std::invalid_argument("Access denied. Check the server access key.");
+    }
     if (value.at("version") != protocolVersion)
         throw std::invalid_argument("Incompatible protocol version");
     const auto name = value.at("name").get<std::string>();
@@ -62,8 +75,11 @@ void Server::join(Peer &peer, const Json &value) {
             throw std::length_error("Server room limit reached");
         Room room;
         const auto path = config_.dataDirectory / (roomName + ".json");
-        if (std::filesystem::exists(path)) {
-            room.board.load(readDocumentFile(path));
+        try {
+            if (std::filesystem::exists(path))
+                room.board.load(readDocumentFile(path));
+        } catch (const std::exception &) {
+            throw std::runtime_error("Room archive unavailable. Contact the server operator.");
         }
         rooms_.emplace(roomName, std::move(room));
     }
@@ -73,9 +89,13 @@ void Server::join(Peer &peer, const Json &value) {
     peer.name = name;
     peer.room = roomName;
     peer.joined = true;
+    peer.joinDeadline->cancel();
     room.peers.insert(peer.id);
-    peer.connection->send(
-        {{"type", "welcome"}, {"version", protocolVersion}, {"id", peer.id}, {"room", roomName}});
+    peer.connection->send({{"type", "welcome"},
+                           {"version", protocolVersion},
+                           {"id", peer.id},
+                           {"room", roomName},
+                           {"access_controlled", !config_.accessKey.empty()}});
     peer.connection->send({{"type", "snapshot_begin"}, {"revision", room.board.revision()}});
     for (const auto &shape : room.board.shapes())
         peer.connection->send({{"type", "snapshot_shape"}, {"shape", shapeJson(shape)}});
@@ -142,6 +162,8 @@ void Server::message(const std::string &id, const Json &value) {
             broadcast(peer.room, {{"type", "cursor"}, {"id", peer.id}, {"point", {point.x, point.y}}});
         } else
             throw std::invalid_argument("Unknown operation");
+    } catch (const Json::exception &) {
+        peer.connection->send({{"type", "error"}, {"message", "Invalid operation fields"}});
     } catch (const std::exception &error) {
         peer.connection->send({{"type", "error"}, {"message", std::string(error.what()).substr(0, 200)}});
     }

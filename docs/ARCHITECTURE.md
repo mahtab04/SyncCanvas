@@ -13,7 +13,7 @@ Board encapsulates shape insertion, server-assigned identity, revision updates, 
 ## Synchronization
 
 1. The client resolves and connects asynchronously, with an eight-second connection deadline.
-2. It sends protocol version, name, and room ID.
+2. It sends protocol version, name, room ID, and the optional server access key. The server validates a configured key before touching room archives. Each accepted connection has a non-renewable 10-second successful-join deadline.
 3. The server sends welcome, snapshot_begin, bounded snapshot_shape messages, and snapshot_end.
 4. The client builds the snapshot separately and swaps it into the visible board on completion.
 5. A draw request carries geometry and style only. The server validates it, assigns an ID and owner, increments revision, and broadcasts the accepted shape to the entire room, including the author.
@@ -29,6 +29,7 @@ Live cursors and drawing previews are transient and unversioned. While dragging,
 - JSON nesting is limited to 16 before parsing; shapes accept only supported tools, finite coordinates, bounded stroke widths, and bounded point counts.
 - Each transport queue is capped at 4 MiB and 4096 messages. A slow receiver is disconnected rather than retaining unbounded writes.
 - The UI mailbox has equivalent byte/message limits. Overflow forces reconnection.
+- A byte token bucket on accepted transports limits declared incoming frame sizes to 512 KiB/second with a 2 MiB burst before allocation, including padded messages. Client snapshot reception stays unlimited by this bucket.
 - A token bucket limits each connection to 120 messages/second, burst 240. Cursor updates are generated at most 20 times/second by the desktop client.
 - A connection must keep sending complete messages; the transport closes it after 35 seconds without one. Connected clients ping every ten seconds.
 - Room files are restricted to validated room IDs under the configured data directory. File size, board count, shape count, and geometry budgets are checked.

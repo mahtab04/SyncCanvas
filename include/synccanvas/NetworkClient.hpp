@@ -10,7 +10,8 @@ class NetworkClient {
     ~NetworkClient();
     NetworkClient(const NetworkClient &) = delete;
     NetworkClient &operator=(const NetworkClient &) = delete;
-    void connect(std::string host, std::string port, std::string room, std::string name);
+    void connect(std::string host, std::string port, std::string room, std::string name,
+                 std::string accessKey = {});
     void disconnect();
     void send(Json message);
     std::vector<Json> poll();

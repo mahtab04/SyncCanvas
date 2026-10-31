@@ -17,7 +17,11 @@ bool ClientLayout::onBoard(float x, float y) const {
     return Rect{left, top, boardWidth * scale, boardHeight * scale}.contains(x, y);
 }
 Rect ClientLayout::field(int index) const {
-    return {22, 127.f + index * 63, 228, 34};
+    if (index == 0)
+        return {22, 127, 150, 34};
+    if (index == 1)
+        return {182, 127, 68, 34};
+    return {22, 190.f + (index - 2) * 63, 228, 34};
 }
 Rect ClientLayout::toolbar() const {
     return {280 + (width - 280 - 340.f) * .5f, 100, 340, 64};
@@ -32,6 +36,7 @@ std::vector<Button> ClientLayout::buttons(const ClientView &view) const {
         {{22, 687, 228, 36}, "import", "Import board.json"},
         {{22, 749, 48, 32}, "thinner", "-"},
         {{202, 749, 48, 32}, "thicker", "+"}};
+    result.push_back({{float(width - 166), 110, 140, 36}, "grid", "Grid  G", view.showGrid});
     const auto bar = toolbar();
     for (std::size_t i = 0; i < drawingTools.size(); ++i) {
         const auto &tool = drawingTools[i];
@@ -120,16 +125,23 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     canvas_.strokeRoundedRect(10, 10, 252, float(layout.height - 20), 14);
     text("S Y N C C A N V A S", 22, 42, 0x6965db);
     text("Ideas, on the same page.", 22, 68, 0x868e96);
-    const char *labels[]{"SERVER", "PORT", "ROOM", "YOUR NAME"};
+    const char *labels[]{"SERVER", "PORT", "ROOM", "YOUR NAME", "ACCESS KEY"};
     const bool fieldsLocked = view.online || view.connecting || view.reconnect;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         auto box = layout.field(i);
-        text(std::string(labels[i]) + (fieldsLocked ? "  (locked)" : ""), box.x, box.y - 9, 0x868e96);
+        text(labels[i], box.x, box.y - 9, 0x868e96);
         canvas_.setFillColor(Color::hex(view.activeField == i ? 0xf3f0ff : 0xf1f3f5));
         canvas_.fillRoundedRect(box.x, box.y, box.w, box.h, 5);
         auto value = view.fields[i];
-        if (value.size() > 24)
-            value = "..." + value.substr(value.size() - 21);
+        if (i == 4)
+            value = value.empty() ? "Optional" : std::string(std::min<std::size_t>(value.size(), 20), '*');
+        const std::size_t visible = i == 0 ? 16 : i == 1 ? 5 : 24;
+        if (value.size() > visible)
+            value = "..." + value.substr(value.size() - (visible - 3));
+        if (!fieldsLocked && view.activeField == i && view.fieldSelected) {
+            canvas_.setFillColor(Color::hex(0xd0bfff));
+            canvas_.fillRoundedRect(box.x + 7, box.y + 5, box.w - 14, box.h - 10, 3);
+        }
         text(value + (!fieldsLocked && view.activeField == i ? "|" : ""), box.x + 10, box.y + 23,
              fieldsLocked ? 0x868e96 : 0x343a40);
     }
@@ -188,7 +200,9 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     text(std::to_string(int(view.strokeWidth)) + " px", 111, 771, 0x343a40);
     text("Ctrl+Z  undo   [ ]  width", 22, 807, 0x868e96);
     text("Ctrl+S  export   Ctrl+O  import", 22, 830, 0x868e96);
-    text("Local / trusted LAN", 22, float(layout.height - 46), 0x868e96);
+    text(view.online ? (view.accessControlled ? "Key required / plain TCP" : "Open server / plain TCP")
+                     : "Local / trusted LAN",
+         22, float(layout.height - 46), 0x868e96);
     text("Draw. Share. Think together.", 22, float(layout.height - 23), 0x868e96);
     text(view.online ? "LIVE WORKSPACE" : "A LITTLE SPACE FOR BIG IDEAS", 300, 41, 0x6965db);
     text("Room / " + view.fields[2], 300, 72, 0x343a40);
@@ -206,9 +220,10 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     canvas_.setFillColor(Color::hex(0xffffff));
     canvas_.fillRect(0, 0, boardWidth, boardHeight);
     canvas_.setFillColor(Color::hex(0xe9ecef));
-    for (int x = 20; x < int(boardWidth); x += 24)
-        for (int y = 20; y < int(boardHeight); y += 24)
-            canvas_.fillCircle(float(x), float(y), .8f);
+    if (view.showGrid)
+        for (int x = 20; x < int(boardWidth); x += 24)
+            for (int y = 20; y < int(boardHeight); y += 24)
+                canvas_.fillCircle(float(x), float(y), .8f);
     for (const auto &value : view.shapes)
         shape(value);
     for (const auto &[id, cursor] : view.peers)
@@ -224,7 +239,9 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
         canvas_.strokeCircle(cursor.position.x, cursor.position.y, 7);
         text(cursor.name, cursor.position.x + 12, cursor.position.y - 5, 0x9c36b5);
     }
-    if (view.shapes.empty() && !view.draft) {
+    const bool remoteDrawing = std::any_of(view.peers.begin(), view.peers.end(),
+                                           [](const auto &peer) { return peer.second.preview.has_value(); });
+    if (view.shapes.empty() && !view.draft && !remoteDrawing) {
         text(view.online ? "Choose a tool and draw. Invite someone to the same room."
                          : "Join a room to start drawing together.",
              300, 375, 0x868e96);

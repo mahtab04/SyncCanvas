@@ -46,9 +46,10 @@ void NetworkClient::disconnect() {
         push({{"type", "offline"}, {"message", "Disconnected"}});
     });
 }
-void NetworkClient::connect(std::string host, std::string port, std::string room, std::string name) {
+void NetworkClient::connect(std::string host, std::string port, std::string room, std::string name,
+                            std::string accessKey) {
     asio::post(io_, [this, host = std::move(host), port = std::move(port), room = std::move(room),
-                     name = std::move(name)] {
+                     name = std::move(name), accessKey = std::move(accessKey)] {
         stopConnection();
         const auto generation = generation_;
         push({{"type", "connecting"}});
@@ -60,7 +61,7 @@ void NetworkClient::connect(std::string host, std::string port, std::string room
             }
         });
         resolver_.async_resolve(
-            host, port, [this, generation, room, name](asio::error_code error, auto endpoints) {
+            host, port, [this, generation, room, name, accessKey](asio::error_code error, auto endpoints) {
                 if (generation != generation_)
                     return;
                 if (error) {
@@ -72,7 +73,7 @@ void NetworkClient::connect(std::string host, std::string port, std::string room
                 auto socket = connecting_;
                 asio::async_connect(
                     *socket, endpoints,
-                    [this, generation, socket, room, name](asio::error_code connectError, auto) {
+                    [this, generation, socket, room, name, accessKey](asio::error_code connectError, auto) {
                         if (generation != generation_)
                             return;
                         if (connectError) {
@@ -103,8 +104,11 @@ void NetworkClient::connect(std::string host, std::string port, std::string room
                                     push({{"type", "offline"}, {"message", reason}});
                                 }
                             });
-                        connection_->send(
-                            {{"type", "join"}, {"version", protocolVersion}, {"room", room}, {"name", name}});
+                        connection_->send({{"type", "join"},
+                                           {"version", protocolVersion},
+                                           {"room", room},
+                                           {"name", name},
+                                           {"access_key", accessKey}});
                         beat(generation);
                     });
             });

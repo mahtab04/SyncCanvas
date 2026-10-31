@@ -5,9 +5,22 @@
 #include <cmath>
 #include <glad/gl.h>
 #include <iostream>
+#include <utility>
 
 namespace synccanvas {
-Application::Application(std::array<std::string, 4> fields) {
+namespace {
+std::size_t fieldLimit(int index) {
+    constexpr std::array<std::size_t, 5> limits{128, 5, 32, 24, 128};
+    return limits[static_cast<std::size_t>(index)];
+}
+bool allowedFieldCharacter(int index, unsigned c) {
+    if (index == 1)
+        return c >= '0' && c <= '9';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
+           c == '_' || (index == 0 && (c == '.' || c == ':'));
+}
+} // namespace
+Application::Application(std::array<std::string, 5> fields) {
     view_.fields = std::move(fields);
 }
 bool Application::pressed(int key) {
@@ -21,18 +34,14 @@ void Application::character(unsigned codepoint) {
     if (view_.activeField < 0 || view_.online || view_.connecting || view_.reconnect)
         return;
     auto &field = view_.fields[view_.activeField];
-    const std::size_t limit = view_.activeField == 0   ? 128
-                              : view_.activeField == 1 ? 5
-                              : view_.activeField == 2 ? 32
-                                                       : 24;
-    bool allowed = (codepoint >= 'a' && codepoint <= 'z') || (codepoint >= 'A' && codepoint <= 'Z') ||
-                   (codepoint >= '0' && codepoint <= '9') || codepoint == '-' || codepoint == '_';
-    if (view_.activeField == 0)
-        allowed = allowed || codepoint == '.' || codepoint == ':';
-    if (view_.activeField == 1)
-        allowed = codepoint >= '0' && codepoint <= '9';
-    if (allowed && field.size() < limit)
-        field.push_back(static_cast<char>(codepoint));
+    const auto limit = fieldLimit(view_.activeField);
+    if (allowedFieldCharacter(view_.activeField, codepoint)) {
+        if (view_.fieldSelected)
+            field.clear();
+        view_.fieldSelected = false;
+        if (field.size() < limit)
+            field.push_back(static_cast<char>(codepoint));
+    }
 }
 void Application::connect() {
     if (!validIdentifier(view_.fields[2]) || !validIdentifier(view_.fields[3], 24) ||
@@ -49,12 +58,18 @@ void Application::connect() {
         view_.status = "Port must be between 1 and 65535.";
         return;
     }
+    if (!view_.fields[4].empty() && (view_.fields[4].size() < 16 || !validIdentifier(view_.fields[4], 128))) {
+        view_.status = "Access key: 16-128 letters, numbers, _ or -. Leave blank for open servers.";
+        return;
+    }
     resetBoardView();
+    offlineReason_.clear();
     view_.activeField = -1;
+    view_.fieldSelected = false;
     view_.connecting = true;
     view_.reconnect = true;
     view_.status = "Connecting...";
-    network_.connect(view_.fields[0], view_.fields[1], view_.fields[2], view_.fields[3]);
+    network_.connect(view_.fields[0], view_.fields[1], view_.fields[2], view_.fields[3], view_.fields[4]);
 }
 void Application::action(const std::string &actionName) {
     if (actionName == "connect") {
@@ -62,6 +77,7 @@ void Application::action(const std::string &actionName) {
             view_.online = false;
             view_.connecting = false;
             view_.reconnect = false;
+            offlineReason_.clear();
             resetBoardView();
             view_.status = "Disconnected. Change the room name to join a different board.";
             network_.disconnect();
@@ -77,6 +93,8 @@ void Application::action(const std::string &actionName) {
         exportBoard();
     else if (actionName == "import")
         importBoard();
+    else if (actionName == "grid")
+        view_.showGrid = !view_.showGrid;
     else if (actionName == "thinner")
         view_.strokeWidth = std::max(1.f, view_.strokeWidth - 1);
     else if (actionName == "thicker")
@@ -135,6 +153,7 @@ void Application::resetBoardView() {
     view_.snapshot.clear();
     view_.peers.clear();
     view_.selfId.clear();
+    view_.accessControlled = false;
     view_.revision = 0;
     view_.draft.reset();
     importQueue_.clear();
@@ -156,11 +175,14 @@ void Application::processEvents() {
                 resetBoardView();
                 view_.status = event.at("message").get<std::string>() +
                                (view_.reconnect ? ". Retrying in 3 seconds." : "");
+                if (!offlineReason_.empty())
+                    view_.status = std::exchange(offlineReason_, {});
                 nextReconnect_ = glfwGetTime() + 3;
             } else if (type == "welcome") {
                 if (event.at("version") != protocolVersion)
                     throw std::runtime_error("Protocol version mismatch");
                 view_.selfId = event.at("id").get<std::string>();
+                view_.accessControlled = event.value("access_controlled", false);
                 if (event.at("room") != view_.fields[2])
                     throw std::runtime_error("Unexpected room");
                 view_.peers.clear();
@@ -226,6 +248,7 @@ void Application::processEvents() {
                 importQueue_.clear();
                 view_.status = event.at("message").get<std::string>();
                 if (!view_.online) {
+                    offlineReason_ = view_.status;
                     view_.reconnect = false;
                     view_.connecting = false;
                     network_.disconnect();
@@ -257,13 +280,18 @@ void Application::input() {
         else
             glfwSetWindowShouldClose(window_, true);
     }
-    if (pressed(GLFW_KEY_TAB) && !view_.online && !view_.connecting && !view_.reconnect)
-        view_.activeField = (view_.activeField + 1) % 4;
+    if (pressed(GLFW_KEY_TAB) && !view_.online && !view_.connecting && !view_.reconnect) {
+        view_.activeField = (view_.activeField + 1) % 5;
+        view_.fieldSelected = true;
+    }
     if (pressed(GLFW_KEY_BACKSPACE) && view_.activeField >= 0 && !view_.online && !view_.connecting &&
         !view_.reconnect) {
         auto &field = view_.fields[view_.activeField];
-        if (!field.empty())
+        if (view_.fieldSelected)
+            field.clear();
+        else if (!field.empty())
             field.pop_back();
+        view_.fieldSelected = false;
     }
     if (pressed(GLFW_KEY_ENTER) && !view_.online && !view_.connecting && !view_.reconnect)
         connect();
@@ -319,11 +347,12 @@ void Application::pointer(double mx, double my, int phase) {
     float x = float(mx * fw / ww), y = float(my * fh / hh);
     if (phase == 1) {
         bool handled = false;
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
             if (layout_.field(i).contains(x, y)) {
-                if (!view_.online && !view_.connecting && !view_.reconnect)
+                if (!view_.online && !view_.connecting && !view_.reconnect) {
                     view_.activeField = i;
-                else
+                    view_.fieldSelected = false;
+                } else
                     view_.status = "Disconnect before changing the server, room, or name.";
                 handled = true;
             }
@@ -350,6 +379,10 @@ void Application::pointer(double mx, double my, int phase) {
         previewDirty_ = true;
         auto point = layout_.toBoard(x, y);
         auto &draft = *view_.draft;
+        const bool constrain = glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                               glfwGetKey(window_, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+        if (constrain && draft.kind != "pen")
+            point = constrainEndpoint(draft.points.front(), point, draft.kind);
         if (draft.kind == "pen") {
             auto previous = draft.points.back();
             if (std::hypot(previous.x - point.x, previous.y - point.y) > 2) {
@@ -424,6 +457,35 @@ int Application::run() {
             for (std::size_t i = 0; i < drawingTools.size(); ++i)
                 if (key == drawingTools[i].shortcut || key == GLFW_KEY_1 + static_cast<int>(i))
                     self->requestedTool_ = static_cast<int>(i);
+        const bool editable = self->view_.activeField >= 0 && !self->view_.online &&
+                              !self->view_.connecting && !self->view_.reconnect;
+        if (editable && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
+            if (key == GLFW_KEY_A)
+                self->view_.fieldSelected = true;
+            if (key == GLFW_KEY_V) {
+                if (const char *clipboard = glfwGetClipboardString(window)) {
+                    std::string value;
+                    for (std::size_t i = 0; i <= 128 && clipboard[i]; ++i)
+                        value.push_back(clipboard[i]);
+                    const int field = self->view_.activeField;
+                    const auto &current = self->view_.fields[field];
+                    const auto size = (self->view_.fieldSelected ? 0 : current.size()) + value.size();
+                    if (size > fieldLimit(field) ||
+                        !std::all_of(value.begin(), value.end(),
+                                     [field](unsigned char c) { return allowedFieldCharacter(field, c); }))
+                        self->view_.status = "Paste rejected: invalid characters or field length.";
+                    else if (!value.empty()) {
+                        if (self->view_.fieldSelected)
+                            self->view_.fields[field].clear();
+                        self->view_.fields[field] += value;
+                        self->view_.fieldSelected = false;
+                    }
+                }
+            }
+        }
+        if (key == GLFW_KEY_G && state == GLFW_PRESS &&
+            !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && self->view_.activeField < 0)
+            self->action("grid");
         if (key == GLFW_KEY_S && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL))
             self->exportRequested_ = true;
         if (key == GLFW_KEY_O && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL))

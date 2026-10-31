@@ -7,3 +7,5 @@ __pycache__/
 .vs/
 .idea/
 CMakeUserPresets.json
+.env
+.env.*

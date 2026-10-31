@@ -1,7 +1,9 @@
 #include "synccanvas/Connection.hpp"
+#include <algorithm>
 namespace synccanvas {
-Connection::Connection(asio::ip::tcp::socket socket)
-    : socket_(std::move(socket)), deadline_(socket_.get_executor()) {}
+Connection::Connection(asio::ip::tcp::socket socket, std::size_t incomingBytesPerSecond)
+    : socket_(std::move(socket)), deadline_(socket_.get_executor()),
+      incomingBytesPerSecond_(incomingBytesPerSecond), byteTokens_(incomingBytesPerSecond * 4.0) {}
 void Connection::start(MessageHandler message, CloseHandler closed) {
     onMessage_ = std::move(message);
     onClose_ = std::move(closed);
@@ -18,19 +20,33 @@ void Connection::armDeadline() {
     });
 }
 void Connection::readHeader() {
-    asio::async_read(socket_, asio::buffer(header_),
-                     [self = shared_from_this()](asio::error_code error, std::size_t) {
-                         if (error) {
-                             self->close("Connection closed");
-                             return;
-                         }
-                         try {
-                             self->body_.resize(decodeLength(self->header_));
-                             self->readBody();
-                         } catch (const std::exception &) {
-                             self->close("Invalid frame header");
-                         }
-                     });
+    asio::async_read(
+        socket_, asio::buffer(header_), [self = shared_from_this()](asio::error_code error, std::size_t) {
+            if (error) {
+                self->close("Connection closed");
+                return;
+            }
+            try {
+                const auto length = decodeLength(self->header_);
+                if (self->incomingBytesPerSecond_) {
+                    const auto now = std::chrono::steady_clock::now();
+                    const double rate = static_cast<double>(self->incomingBytesPerSecond_);
+                    self->byteTokens_ = std::min(
+                        rate * 4, self->byteTokens_ +
+                                      rate * std::chrono::duration<double>(now - self->lastHeader_).count());
+                    self->lastHeader_ = now;
+                    if (self->byteTokens_ < length + 4.0) {
+                        self->close("Incoming byte rate exceeded");
+                        return;
+                    }
+                    self->byteTokens_ -= length + 4.0;
+                }
+                self->body_.resize(length);
+                self->readBody();
+            } catch (const std::exception &) {
+                self->close("Invalid frame header");
+            }
+        });
 }
 void Connection::readBody() {
     asio::async_read(socket_, asio::buffer(body_),

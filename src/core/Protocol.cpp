@@ -1,5 +1,7 @@
 #include "synccanvas/Protocol.hpp"
+#include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <stdexcept>
 
 namespace synccanvas {
@@ -32,6 +34,27 @@ Point parsePoint(const Json &value) {
     if (!value.is_array() || value.size() != 2)
         throw std::invalid_argument("Invalid point");
     return {finiteNumber(value[0], 0, boardWidth), finiteNumber(value[1], 0, boardHeight)};
+}
+Point constrainEndpoint(Point start, Point end, std::string_view kind) {
+    if (kind == "pen")
+        return end;
+    const float dx = end.x - start.x, dy = end.y - start.y;
+    if (kind == "line" || kind == "arrow") {
+        const float step = std::numbers::pi_v<float> / 4;
+        const float angle = std::round(std::atan2(dy, dx) / step) * step;
+        const float ux = std::cos(angle), uy = std::sin(angle);
+        float length = std::hypot(dx, dy);
+        if (std::abs(ux) > .0001f)
+            length = std::min(length, (ux > 0 ? boardWidth - start.x : start.x) / std::abs(ux));
+        if (std::abs(uy) > .0001f)
+            length = std::min(length, (uy > 0 ? boardHeight - start.y : start.y) / std::abs(uy));
+        return {std::clamp(start.x + ux * length, 0.f, boardWidth),
+                std::clamp(start.y + uy * length, 0.f, boardHeight)};
+    }
+    const float side =
+        std::min({std::max(std::abs(dx), std::abs(dy)), dx < 0 ? start.x : boardWidth - start.x,
+                  dy < 0 ? start.y : boardHeight - start.y});
+    return {start.x + (dx < 0 ? -side : side), start.y + (dy < 0 ? -side : side)};
 }
 Shape parseShape(const Json &value) {
     Shape result;

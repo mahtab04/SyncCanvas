@@ -42,3 +42,26 @@ and selected Arrow correctly. The README screenshot was updated from the running
 commit replication for rectangle, diamond, ellipse, arrow, line, and freehand,
 rejection of invalid point counts, owner undo, and archive persistence. Changed C++
 files pass clang-format checks. No automated test folder was added.
+
+## Controls and security update (October 31, 2026)
+
+- Release server, network, core, and desktop targets compiled with MSVC.
+- One-off TCP checks passed for missing/wrong keys, authorized preview/commit,
+  room isolation, generic malformed-field errors, hidden archive parser details,
+  rejection of whitespace-padded frame floods, and a fixed 10-second join deadline
+  despite pre-join traffic. Joined peers remained connected past that deadline.
+- Archive output was checked for absence of the synthetic access key. Invalid
+  server key configuration failed closed without echoing its value.
+- A separate C++ probe exercised the actual NetworkClient access-key join,
+  preview, commit, disconnect, and rejected-key paths.
+- 12,000 constrained-geometry cases checked board boundaries, equal shape
+  dimensions, line/arrow angle snapping, and unchanged freehand endpoints;
+  zero-length arrow cases also passed.
+- The revised panel, select-all highlight, replacement paste, and grid toggle
+  were checked through the desktop interface. Shift modifier input itself was
+  not manually exercised; its geometry helper was checked directly.
+- Dependency clang-tidy checks are now opt-in; project formatting remains checked.
+
+These checks do not constitute a security audit. TLS, per-room authorization,
+per-IP/global admission controls, and hostile-network load testing remain future work.
+No test folder was added.

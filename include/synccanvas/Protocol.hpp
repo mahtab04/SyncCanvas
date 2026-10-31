@@ -41,6 +41,8 @@ struct Shape {
 // All externally supplied data crosses these validation functions.
 bool validIdentifier(const std::string &value, std::size_t limit = 32);
 Point parsePoint(const Json &value);
+// Constrain valid board points to equal dimensions or 45-degree line angles.
+Point constrainEndpoint(Point start, Point end, std::string_view kind);
 Shape parseShape(const Json &value);
 Json shapeJson(const Shape &shape);
 std::vector<std::uint8_t> encodeFrame(const Json &message);

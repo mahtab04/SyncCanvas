@@ -11,6 +11,7 @@ struct ServerConfig {
     std::string address = "127.0.0.1";
     unsigned short port = 8765;
     std::filesystem::path dataDirectory = "boards";
+    std::string accessKey;
 };
 class Server {
   public:
@@ -23,6 +24,7 @@ class Server {
         std::string id, name, room;
         bool joined = false;
         std::optional<Shape> preview;
+        std::unique_ptr<asio::steady_timer> joinDeadline;
         double tokens = 240;
         std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
     };
