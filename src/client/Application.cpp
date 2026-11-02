@@ -31,6 +31,18 @@ bool Application::pressed(int key) {
     return edge;
 }
 void Application::character(unsigned codepoint) {
+    if (view_.editingColor) {
+        const bool hex = (codepoint >= '0' && codepoint <= '9') || (codepoint >= 'a' && codepoint <= 'f') ||
+                         (codepoint >= 'A' && codepoint <= 'F');
+        if (hex) {
+            if (view_.colorSelected)
+                view_.colorText.clear();
+            view_.colorSelected = false;
+            if (view_.colorText.size() < 6)
+                view_.colorText.push_back(static_cast<char>(codepoint));
+        }
+        return;
+    }
     if (view_.activeField < 0 || view_.online || view_.connecting || view_.reconnect)
         return;
     auto &field = view_.fields[view_.activeField];
@@ -80,6 +92,31 @@ void Application::connect() {
     network_.connect(view_.fields[0], view_.fields[1], view_.fields[2], view_.fields[3], view_.fields[4]);
 }
 void Application::action(const std::string &actionName) {
+    if (actionName != "clear" && view_.clearArmed) {
+        view_.clearArmed = false;
+        view_.status = "Clear canceled. Board unchanged.";
+    }
+    if (actionName == "theme") {
+        view_.darkTheme = !view_.darkTheme;
+        return;
+    }
+    if (actionName == "apply_color") {
+        if (view_.colorText.size() != 6 ||
+            view_.colorText.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+            view_.editingColor = true;
+            view_.status = "Enter six hex digits, for example #7048E8, then Apply or Enter.";
+            return;
+        }
+        view_.color = static_cast<std::uint32_t>(std::stoul(view_.colorText, nullptr, 16));
+        view_.colorText = colorHex(view_.color);
+        view_.editingColor = false;
+        view_.colorSelected = false;
+        return;
+    }
+    if (actionName == "clear") {
+        clearBoard();
+        return;
+    }
     if (actionName == "connect") {
         if (view_.online || view_.connecting || view_.reconnect) {
             view_.online = false;
@@ -95,10 +132,15 @@ void Application::action(const std::string &actionName) {
         cancelDraft();
         view_.tool = actionName;
     } else if (actionName == "undo") {
+        if (view_.clearing)
+            return;
         if (view_.online)
             network_.send({{"type", "undo"}});
         else if (canDraw()) {
-            localBoard_.undo("local");
+            if (localBoard_.undo("local").empty() && clearedLocalBackup_) {
+                localBoard_ = std::move(*clearedLocalBackup_);
+                clearedLocalBackup_.reset();
+            }
             resetBoardView();
             view_.status = "Local undo. Export to save your board.";
         }
@@ -116,7 +158,12 @@ void Application::action(const std::string &actionName) {
         view_.strokeWidth = std::min(16.f, view_.strokeWidth + 1);
     else if (actionName.starts_with("color")) {
         const auto &colors = inkColors;
-        view_.color = colors[actionName.back() - '0'];
+        const auto index = static_cast<std::size_t>(std::stoul(actionName.substr(5)));
+        if (index < colors.size()) {
+            view_.color = colors[index];
+            view_.colorText = colorHex(view_.color);
+            view_.editingColor = false;
+        }
     }
 }
 void Application::exportBoard() {
@@ -168,7 +215,7 @@ void Application::importBoard() {
     }
 }
 bool Application::canDraw() const {
-    return view_.online || (!view_.connecting && !view_.reconnect);
+    return !view_.clearing && (view_.online || (!view_.connecting && !view_.reconnect));
 }
 bool Application::commitShape(const Shape &shape) {
     if (view_.online) {
@@ -193,8 +240,8 @@ void Application::shareLocalBoard() {
     try {
         if (!view_.online)
             throw std::runtime_error("Join a room before adding a copy of your local drawing");
-        if (!importQueue_.empty())
-            throw std::runtime_error("Wait for the current import to finish");
+        if (!importQueue_.empty() || view_.clearing)
+            throw std::runtime_error("Wait for the current import or clear to finish");
         std::size_t points = 0;
         for (const auto &shape : view_.shapes)
             points += shape.points.size();
@@ -209,6 +256,45 @@ void Application::shareLocalBoard() {
         view_.status = error.what();
     }
 }
+void Application::clearBoard() {
+    if (view_.clearArmed && glfwGetTime() > clearDeadline_)
+        view_.clearArmed = false;
+    if (!canDraw() || !importQueue_.empty()) {
+        view_.status = "Wait for the connection, import, or current clear to finish.";
+        return;
+    }
+    const auto count = view_.online ? static_cast<std::size_t>(std::count_if(
+                                          view_.shapes.begin(), view_.shapes.end(),
+                                          [this](const Shape &shape) { return shape.owner == view_.selfId; }))
+                                    : localBoard_.shapes().size();
+    if (count == 0) {
+        view_.clearArmed = false;
+        view_.status = view_.online ? "No shapes from your current session to clear."
+                                    : "The local board is already empty.";
+        return;
+    }
+    if (!view_.clearArmed) {
+        view_.clearArmed = true;
+        clearDeadline_ = glfwGetTime() + 5;
+        view_.status = view_.online
+                           ? "Click Confirm clear within 5 seconds to remove only your session's shapes."
+                           : "Click Confirm clear within 5 seconds. Undo can restore the local board.";
+        return;
+    }
+    view_.clearArmed = false;
+    cancelDraft();
+    if (view_.online) {
+        clearRemaining_ = count;
+        clearAwaitingAck_ = false;
+        view_.clearing = true;
+        view_.status = "Clearing your shapes. Other participants' work is kept.";
+    } else {
+        clearedLocalBackup_ = std::move(localBoard_);
+        localBoard_ = Board{};
+        resetBoardView();
+        view_.status = "Local board cleared. Ctrl+Z restores the previous board.";
+    }
+}
 void Application::cancelDraft() {
     if (view_.draft && view_.online)
         network_.send({{"type", "preview"}, {"shape", nullptr}});
@@ -217,6 +303,10 @@ void Application::cancelDraft() {
 }
 void Application::resetBoardView() {
     view_.online = false;
+    view_.clearArmed = false;
+    view_.clearing = false;
+    clearRemaining_ = 0;
+    clearAwaitingAck_ = false;
     view_.shapes = localBoard_.shapes();
     view_.localShapeCount = localBoard_.shapes().size();
     view_.snapshot.clear();
@@ -275,6 +365,8 @@ void Application::processEvents() {
                     if (!view_.online || revision != view_.revision + 1 || view_.shapes.size() >= maxShapes)
                         throw std::runtime_error("Board revision mismatch");
                     view_.revision = revision;
+                    if (view_.clearing && shape.owner == view_.selfId)
+                        ++clearRemaining_;
                     view_.shapes.push_back(std::move(shape));
                     view_.status = "All changes synced. Revision " + std::to_string(view_.revision);
                 }
@@ -293,8 +385,23 @@ void Application::processEvents() {
                 if (revision != view_.revision + 1)
                     throw std::runtime_error("Board revision mismatch");
                 const auto id = event.at("id").get<std::string>();
+                const bool clearingOwn =
+                    view_.clearing &&
+                    std::any_of(view_.shapes.begin(), view_.shapes.end(), [this, &id](const Shape &shape) {
+                        return shape.id == id && shape.owner == view_.selfId;
+                    });
                 std::erase_if(view_.shapes, [&id](const Shape &shape) { return shape.id == id; });
                 view_.revision = revision;
+                if (clearingOwn) {
+                    clearAwaitingAck_ = false;
+                    if (clearRemaining_ > 0)
+                        --clearRemaining_;
+                    if (clearRemaining_ == 0) {
+                        view_.clearing = false;
+                        view_.status =
+                            "Your session's shapes were cleared. Other participants' work is kept.";
+                    }
+                }
             } else if (type == "peer_join")
                 view_.peers[event.at("id").get<std::string>()].name = event.at("name").get<std::string>();
             else if (type == "peer_leave")
@@ -316,6 +423,9 @@ void Application::processEvents() {
             } else if (type == "error") {
                 cancelDraft();
                 importQueue_.clear();
+                clearRemaining_ = 0;
+                clearAwaitingAck_ = false;
+                view_.clearing = false;
                 view_.status = event.at("message").get<std::string>();
                 if (!view_.online) {
                     offlineReason_ = view_.status;
@@ -335,6 +445,15 @@ void Application::processEvents() {
 }
 void Application::input() {
     const double now = glfwGetTime();
+    if (view_.clearArmed && now > clearDeadline_) {
+        view_.clearArmed = false;
+        view_.status = "Clear canceled. Board unchanged.";
+    }
+    if (view_.online && clearRemaining_ > 0 && !clearAwaitingAck_ && now - lastClear_ >= .025) {
+        network_.send({{"type", "undo"}});
+        clearAwaitingAck_ = true;
+        lastClear_ = now;
+    }
     if (view_.reconnect && !view_.online && !view_.connecting && now >= nextReconnect_)
         connect();
     if (view_.online && !importQueue_.empty() && now - lastImport_ > .025) {
@@ -345,36 +464,53 @@ void Application::input() {
     if (pressed(GLFW_KEY_ESCAPE)) {
         if (view_.draft)
             cancelDraft();
+        else if (view_.clearArmed) {
+            view_.clearArmed = false;
+            view_.status = "Clear canceled. Board unchanged.";
+        } else if (view_.editingColor)
+            view_.editingColor = false;
         else if (view_.activeField >= 0)
             view_.activeField = -1;
         else
             glfwSetWindowShouldClose(window_, true);
     }
-    if (pressed(GLFW_KEY_TAB) && !view_.online && !view_.connecting && !view_.reconnect) {
+    if (pressed(GLFW_KEY_TAB) && !view_.editingColor && !view_.online && !view_.connecting &&
+        !view_.reconnect) {
         view_.activeField = (view_.activeField + 1) % 5;
         view_.fieldSelected = true;
     }
-    if (pressed(GLFW_KEY_BACKSPACE) && view_.activeField >= 0 && !view_.online && !view_.connecting &&
-        !view_.reconnect) {
-        auto &field = view_.fields[view_.activeField];
-        if (view_.fieldSelected)
-            field.clear();
-        else if (!field.empty())
-            field.pop_back();
-        view_.fieldSelected = false;
+    if (pressed(GLFW_KEY_BACKSPACE)) {
+        if (view_.editingColor) {
+            if (view_.colorSelected)
+                view_.colorText.clear();
+            else if (!view_.colorText.empty())
+                view_.colorText.pop_back();
+            view_.colorSelected = false;
+        } else if (view_.activeField >= 0 && !view_.online && !view_.connecting && !view_.reconnect) {
+            auto &field = view_.fields[view_.activeField];
+            if (view_.fieldSelected)
+                field.clear();
+            else if (!field.empty())
+                field.pop_back();
+            view_.fieldSelected = false;
+        }
     }
-    if (pressed(GLFW_KEY_ENTER) && !view_.online && !view_.connecting && !view_.reconnect)
-        connect();
+    if (pressed(GLFW_KEY_ENTER)) {
+        if (view_.editingColor)
+            action("apply_color");
+        else if (!view_.online && !view_.connecting && !view_.reconnect)
+            connect();
+    }
     if (exportRequested_)
         exportBoard();
     if (importRequested_)
         importBoard();
     exportRequested_ = false;
     importRequested_ = false;
-    if (requestedTool_ >= 0 && view_.activeField < 0 && !view_.draft)
+    if (requestedTool_ >= 0 && view_.activeField < 0 && !view_.editingColor && !view_.draft)
         action(std::string(drawingTools[static_cast<std::size_t>(requestedTool_)].kind));
     requestedTool_ = -1;
-    if (view_.activeField < 0) {
+    if (view_.activeField < 0 && !view_.editingColor) {
         if (pressed(GLFW_KEY_LEFT_BRACKET))
             action("thinner");
         if (pressed(GLFW_KEY_RIGHT_BRACKET))
@@ -416,11 +552,25 @@ void Application::pointer(double mx, double my, int phase) {
     layout_.resize(fw, fh);
     float x = float(mx * fw / ww), y = float(my * fh / hh);
     if (phase == 1) {
+        if (view_.clearArmed) {
+            const auto buttons = layout_.buttons(view_);
+            if (std::none_of(buttons.begin(), buttons.end(), [x, y](const Button &button) {
+                    return button.action == "clear" && button.bounds.contains(x, y);
+                }))
+                view_.clearArmed = false;
+        }
         bool handled = false;
+        if (layout_.colorField().contains(x, y)) {
+            view_.editingColor = true;
+            view_.colorSelected = true;
+            view_.activeField = -1;
+            handled = true;
+        }
         for (int i = 0; i < 5; ++i)
             if (layout_.field(i).contains(x, y)) {
                 if (!view_.online && !view_.connecting && !view_.reconnect) {
                     view_.activeField = i;
+                    view_.editingColor = false;
                     view_.fieldSelected = false;
                     if (i == 2)
                         view_.status =
@@ -429,8 +579,10 @@ void Application::pointer(double mx, double my, int phase) {
                     view_.status = "Disconnect before changing the server, room, or name.";
                 handled = true;
             }
-        if (!handled)
+        if (!handled) {
             view_.activeField = -1;
+            view_.editingColor = false;
+        }
         for (const auto &button : layout_.buttons(view_))
             if (button.bounds.contains(x, y)) {
                 action(button.action);
@@ -524,14 +676,37 @@ int Application::run() {
     });
     glfwSetKeyCallback(window_, [](GLFWwindow *window, int key, int, int state, int mods) {
         auto *self = static_cast<Application *>(glfwGetWindowUserPointer(window));
+        if (state == GLFW_PRESS && key != GLFW_KEY_ESCAPE)
+            self->view_.clearArmed = false;
         if (key >= 0 && key < 350 &&
             (state == GLFW_PRESS || (key == GLFW_KEY_BACKSPACE && state == GLFW_REPEAT)))
             self->keyEvents_[key] = true;
         if (state == GLFW_PRESS && !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) &&
-            self->view_.activeField < 0 && !self->view_.draft)
+            self->view_.activeField < 0 && !self->view_.editingColor && !self->view_.draft)
             for (std::size_t i = 0; i < drawingTools.size(); ++i)
                 if (key == drawingTools[i].shortcut || key == GLFW_KEY_1 + static_cast<int>(i))
                     self->requestedTool_ = static_cast<int>(i);
+        if (self->view_.editingColor && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
+            if (key == GLFW_KEY_A)
+                self->view_.colorSelected = true;
+            if (key == GLFW_KEY_V) {
+                if (const char *clipboard = glfwGetClipboardString(window)) {
+                    std::string value;
+                    for (std::size_t i = 0; i < 8 && clipboard[i]; ++i)
+                        value.push_back(clipboard[i]);
+                    if (value.starts_with('#'))
+                        value.erase(0, 1);
+                    const auto candidate =
+                        (self->view_.colorSelected ? std::string{} : self->view_.colorText) + value;
+                    if (candidate.size() <= 6 &&
+                        candidate.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos) {
+                        self->view_.colorText = candidate;
+                        self->view_.colorSelected = false;
+                    } else
+                        self->view_.status = "Paste a hex color such as #7048E8.";
+                }
+            }
+        }
         const bool editable = self->view_.activeField >= 0 && !self->view_.online &&
                               !self->view_.connecting && !self->view_.reconnect;
         if (editable && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
@@ -559,13 +734,15 @@ int Application::run() {
             }
         }
         if (key == GLFW_KEY_G && state == GLFW_PRESS &&
-            !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && self->view_.activeField < 0)
+            !(mods & (GLFW_MOD_CONTROL | GLFW_MOD_ALT | GLFW_MOD_SUPER)) && self->view_.activeField < 0 &&
+            !self->view_.editingColor)
             self->action("grid");
         if (key == GLFW_KEY_S && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL))
             self->exportRequested_ = true;
         if (key == GLFW_KEY_O && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL))
             self->importRequested_ = true;
-        if (key == GLFW_KEY_Z && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL))
+        if (key == GLFW_KEY_Z && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL) &&
+            self->view_.activeField < 0 && !self->view_.editingColor)
             self->undoRequested_ = true;
     });
     glfwSetCharCallback(window_, [](GLFWwindow *window, unsigned codepoint) {

@@ -29,6 +29,10 @@ class Application {
     double lastImport_ = 0;
     double lastPreview_ = 0;
     bool previewDirty_ = false;
+    double clearDeadline_ = 0, lastClear_ = 0;
+    std::size_t clearRemaining_ = 0;
+    bool clearAwaitingAck_ = false;
+    std::optional<Board> clearedLocalBackup_;
     std::filesystem::path exportPath_ = "board.json";
     bool pressed(int key);
     void input();
@@ -43,6 +47,7 @@ class Application {
     bool canDraw() const;
     bool commitShape(const Shape &shape);
     void shareLocalBoard();
+    void clearBoard();
     void character(unsigned codepoint);
 };
 } // namespace synccanvas

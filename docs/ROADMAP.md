@@ -9,6 +9,8 @@ small set of predictable tools.
 - Server/port share a row; room, name, and optional access key remain easy to find.
 - Connection fields support select-all, validated paste, and keyboard traversal.
 - Shift constrains geometry; the dot grid can be hidden without changing the board.
+- Light/dark themes, 12 preset colors, and custom RGB hex entry are available.
+- Local clear has confirmation and Undo recovery; room clearing is limited to current-session ownership.
 - A configured server key gates room access, with a masked field and explicit
   indication that the transport is still unencrypted.
 - Join deadlines, inbound byte limits, and generic operation errors reduce common

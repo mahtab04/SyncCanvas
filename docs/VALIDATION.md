@@ -87,3 +87,19 @@ through the interface: the room field starts empty with a required-name placehol
 and clicking Join / create room keeps the app in Local Studio, focuses the room
 field, and explains the choice. The updated --help output documents the empty default.
 CLI --room remains available for users who intentionally preselect a named room.
+
+## UI controls update (November 1, 2026)
+
+The Release client build and all project C++ formatting checks passed. The light
+and dark layouts, 12 swatches, custom #22C55E entry/application, and drawing with the
+custom color were inspected in the native interface. The review export retained
+exact RGB 0x22C55E. Clear confirmation did not alter the drawing; timeout and Escape
+canceled it while preserving the sketch. The final local-clear/Undo restore path
+was reviewed in code rather than manually executed in this iteration.
+
+An isolated real-TCP check sent ten acknowledged owner-limited undo operations,
+verified consecutive revisions, and confirmed another participant's shape remained
+with its original RGB value. This verifies the protocol used by Clear mine; the
+complete room-clear UI flow was not manually exercised. A dark-mode screenshot is
+included in the README. Theme preferences are session-only. Autosave/recovery work
+was deferred at the user's request; local work still requires Export before closing.

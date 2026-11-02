@@ -13,10 +13,11 @@ A ready-to-import diagram is included in `examples/network-board.json`. Copy it 
 ## What it does
 
 - Offline local boards with undo, import/export, and explicit sharing into a room.
-- Shared freehand strokes, rectangles, diamonds, ellipses, arrows, and lines with five stroke colors and adjustable widths.
+- Shared freehand strokes, rectangles, diamonds, ellipses, arrows, and lines with 12 preset stroke colors, custom RGB hex colors, and adjustable widths.
 - Named rooms, live participant cursors, and per-session undo of your own shapes.
 - Optional server access key, masked entry, and a fixed join deadline.
-- Shift-constrained geometry, a grid toggle, and select-all/paste for connection fields.
+- Shift-constrained geometry, light/dark themes, a grid toggle, and select-all/paste for connection fields.
+- Confirmed local clearing with Undo recovery, and owner-limited clearing in shared rooms.
 - Server-assigned IDs and monotonically increasing board revisions.
 - Full board snapshots on join and reconnect, with automatic retry after connection loss.
 - JSON import/export and periodic server-side persistence with atomic file replacement.
@@ -24,6 +25,12 @@ A ready-to-import diagram is included in `examples/network-board.json`. Copy it 
 - Separate core, network, server, and desktop targets.
 
 Drawing is shown locally while dragging and committed to everyone on release. Long pen strokes split at 512 points. Remote clients see live shape previews at up to 20 updates per second while you drag. Releasing the mouse commits the final shape; Escape or losing focus cancels its preview.
+
+Dark mode adds a contrast outline to very dark strokes so existing drawings stay
+visible; original RGB values remain unchanged in exports and on the network. Theme
+and color preferences currently last for the window session.
+
+![SyncCanvas dark theme and expanded color controls](docs/screenshot-dark.jpg)
 
 ## Quick start
 
@@ -109,7 +116,11 @@ to your local board. During reconnection, use Disconnect to resume local drawing
 
 Use Export before closing to save local work to `board.json` in the client's working
 directory. Launch from a writable directory. Local work is not automatically saved,
-merged, or uploaded on connect.
+merged, or uploaded on connect. Clear board asks for a second click within five
+seconds; Escape, timeout, or another action cancels it. Undo can restore the last
+cleared local board. In a room, Clear mine removes only your current session's
+shapes and waits for each server acknowledgement; other participants and archived
+shapes are preserved. Disconnect cancels any remaining clear requests.
 
 ### Optional access key
 
@@ -132,7 +143,10 @@ per-room permissions. See [security details](SECURITY.md).
 | Shift + drag | Square/circle/regular diamond; line/arrow angles snap to 45 degrees |
 | Grid button or G | Toggle the canvas dot grid |
 | Ctrl+A / Ctrl+V in a field | Select all / paste a validated value |
-| Color swatches | Choose ink |
+| Color swatches / hex field + Apply | Choose a preset or any six-digit RGB color (for example `#22C55E`) |
+| Dark theme / Light theme | Switch the interface and canvas theme for this window |
+| Clear board / Confirm clear | Clear the local board; Undo restores the previous board |
+| Clear mine / Confirm clear | Remove only shapes owned by your current room session |
 | + / - buttons or [ / ] | Set stroke width from 1 to 16 |
 | Undo button or Ctrl+Z | Remove your latest committed shape |
 | Export or Ctrl+S | Write the visible board to `board.json` in the working directory |

@@ -73,3 +73,19 @@ or starting network work. A valid name is an explicit join-or-create request;
 `--room ROOM` may prefill it for scripted launches. Existing names restore their
 saved room boards, while new names start empty. The server never selects a room
 for a client, and independent launches do not inherit a previous room implicitly.
+
+## Theme, color, and clear controls
+
+Theme changes affect rendering only. Very dark geometry gets a contrast underlay
+on dark paper without copying its point buffer or changing stored RGB/style values.
+The palette has 12 presets; the custom color field accepts six validated hex digits
+with an optional leading # on paste. Applying a color does not connect to a room,
+and drawing shortcuts are suppressed while the color field is being edited.
+
+Clear requires a second click within five seconds. Local clear keeps the previous
+Board as one bounded in-memory backup, recoverable with Undo. A later local clear
+replaces that backup. Shared Clear mine sends existing owner-limited undo operations
+at most 40 times per second, with one outstanding acknowledgement at a time. It
+accounts for late accepted shapes, blocks simultaneous drawing/imports, and stops
+on errors or disconnect. Other owners' shapes and archived shapes are not cleared.
+No protocol extension or server-wide destructive clear operation was introduced.
