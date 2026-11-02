@@ -7,6 +7,7 @@ small set of predictable tools.
 ## Implemented in this iteration
 
 - Server/port share a row; room, name, and optional access key remain easy to find.
+- Desktop hosting has Start/Stop, stop confirmation, and LAN access enabled by default; no separate executable is needed.
 - Connection fields support select-all, validated paste, and keyboard traversal.
 - Shift constrains geometry; the dot grid can be hidden without changing the board.
 - Light/dark themes, 12 preset colors, and custom RGB hex entry are available.

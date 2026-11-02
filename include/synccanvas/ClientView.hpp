@@ -26,11 +26,14 @@ struct ClientView {
     bool fieldSelected = false, showGrid = true, accessControlled = false;
     bool darkTheme = false, editingColor = false, colorSelected = false;
     bool clearArmed = false, clearing = false;
+    bool hosting = false, stopHostArmed = false;
+    std::string hostStatus = "Server stopped";
     std::string colorText = "1E1E1E";
     std::string tool = "pen", status = "Draw locally now. Export to save, or join a room to collaborate.",
                 selfId;
     std::size_t localShapeCount = 0;
     std::string hoveredTool;
+    std::string hoveredButton, pressedButton;
     std::uint32_t color = inkColors[0];
     float strokeWidth = 3;
     bool online = false, connecting = false, reconnect = false;
@@ -49,6 +52,7 @@ struct Button {
     Rect bounds;
     std::string action, label;
     bool selected = false;
+    bool enabled = true;
 };
 class ClientLayout {
   public:
@@ -71,6 +75,7 @@ class Renderer {
   private:
     vectorgl::Canvas canvas_;
     bool hasFont_ = false;
+    std::string fontPath_;
     bool darkTheme_ = false, drawingBoard_ = false;
     void text(const std::string &, float x, float y, std::uint32_t color = 0x495057);
     void shape(const Shape &);

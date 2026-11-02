@@ -6,6 +6,17 @@ The server owns one Asio event loop. Its peer map owns each Connection, and its 
 
 The desktop Application owns NetworkClient, ClientView, ClientLayout, and Renderer. The GLFW/OpenGL thread alone handles input, view state, and rendering. NetworkClient owns a second event loop and a worker thread; UI requests are posted to that loop, and received JSON events cross back through a mutex-protected mailbox. Sockets never run on the rendering thread.
 
+Application also owns HostedServer, which creates the same Server implementation
+used by the standalone executable on a separate worker thread. Bind/listen completes
+before Start reports success. Embedded servers do not register process signal
+handlers. Stop posts a final save and event-loop shutdown, joins the worker, and
+destroys its sockets; window shutdown follows the same path. Final save failures
+are reported, but stopping still releases the listener. HostedServer controls only
+its own instance, never an external process. Desktop hosting listens on all IPv4 interfaces by default; the standalone
+executable retains its loopback default. Per-user, per-port hosted archives are separate
+from the standalone server's configured directory. Only room/name remain editable
+while hosting offline; joining still uses the normal TCP snapshot path.
+
 Connection owns the socket, timeout timer, frame buffers, and write queue. Shared ownership keeps buffers alive until pending handlers finish. Close is idempotent, cancels I/O, and posts its notification to avoid reentrant peer-map erasure during broadcast.
 
 Board encapsulates shape insertion, server-assigned identity, revision updates, owner-limited undo, and validated document loading. A temporary Board is validated before loading replaces an existing document. Search-style algorithm inheritance is unnecessary here: each class has one concrete responsibility and communicates through explicit data contracts.

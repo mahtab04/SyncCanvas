@@ -6,25 +6,39 @@
 
 namespace synccanvas {
 Server::Server(ServerConfig config)
-    : config_(std::move(config)), acceptor_(io_), signals_(io_, SIGINT, SIGTERM), saveTimer_(io_) {
+    : config_(std::move(config)), acceptor_(io_), signals_(io_), saveTimer_(io_) {
+    if (config_.handleSignals) {
+        signals_.add(SIGINT);
+        signals_.add(SIGTERM);
+    }
     std::filesystem::create_directories(config_.dataDirectory);
     asio::ip::tcp::endpoint endpoint(asio::ip::make_address(config_.address), config_.port);
     acceptor_.open(endpoint.protocol());
+#ifndef _WIN32
     acceptor_.set_option(asio::ip::tcp::acceptor::reuse_address(true));
+#endif
     acceptor_.bind(endpoint);
     acceptor_.listen(128);
 }
 void Server::run() {
-    signals_.async_wait([this](asio::error_code error, int) {
-        if (!error) {
-            saveDirty();
-            io_.stop();
-        }
-    });
+    if (config_.handleSignals)
+        signals_.async_wait([this](asio::error_code error, int) {
+            if (!error)
+                stop();
+        });
     std::cout << "SyncCanvas listening on " << config_.address << ':' << config_.port << std::endl;
     accept();
     scheduleSave();
     io_.run();
+}
+void Server::stop() {
+    asio::post(io_, [this] {
+        saveDirty();
+        io_.stop();
+    });
+}
+bool Server::hasUnsavedChanges() const {
+    return std::any_of(rooms_.begin(), rooms_.end(), [](const auto &room) { return room.second.dirty; });
 }
 void Server::accept() {
     acceptor_.async_accept([this](asio::error_code error, asio::ip::tcp::socket socket) {

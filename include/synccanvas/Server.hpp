@@ -12,11 +12,15 @@ struct ServerConfig {
     unsigned short port = 8765;
     std::filesystem::path dataDirectory = "boards";
     std::string accessKey;
+    bool handleSignals = true;
 };
 class Server {
   public:
     explicit Server(ServerConfig config);
     void run();
+    void stop();
+    // Inspect only after run() has returned.
+    bool hasUnsavedChanges() const;
 
   private:
     struct Peer {

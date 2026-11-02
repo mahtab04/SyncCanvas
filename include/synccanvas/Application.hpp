@@ -1,5 +1,6 @@
 #pragma once
 #include "ClientView.hpp"
+#include "HostedServer.hpp"
 #include "NetworkClient.hpp"
 #include <deque>
 #include <filesystem>
@@ -12,6 +13,7 @@ class Application {
 
   private:
     NetworkClient network_;
+    HostedServer hostedServer_;
     Board localBoard_;
     ClientView view_;
     ClientLayout layout_;
@@ -30,6 +32,7 @@ class Application {
     double lastPreview_ = 0;
     bool previewDirty_ = false;
     double clearDeadline_ = 0, lastClear_ = 0;
+    double stopHostDeadline_ = 0;
     std::size_t clearRemaining_ = 0;
     bool clearAwaitingAck_ = false;
     std::optional<Board> clearedLocalBackup_;
@@ -49,5 +52,7 @@ class Application {
     void shareLocalBoard();
     void clearBoard();
     void character(unsigned codepoint);
+    bool fieldEditable(int index) const;
+    void toggleServer();
 };
 } // namespace synccanvas

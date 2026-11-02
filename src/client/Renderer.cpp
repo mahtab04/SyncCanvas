@@ -1,6 +1,7 @@
 #include "synccanvas/ClientView.hpp"
 #include <algorithm>
 #include <cmath>
+#include <vectorgl/ui.hpp>
 namespace synccanvas {
 using vectorgl::Color;
 void ClientLayout::resize(int w, int h) {
@@ -18,34 +19,37 @@ bool ClientLayout::onBoard(float x, float y) const {
 }
 Rect ClientLayout::field(int index) const {
     if (index == 0)
-        return {22, 127, 150, 34};
+        return {22, 111, 150, 34};
     if (index == 1)
-        return {182, 127, 68, 34};
-    return {22, 190.f + (index - 2) * 63, 228, 34};
+        return {182, 111, 68, 34};
+    return {22, 250.f + (index - 2) * 59, 228, 34};
 }
 Rect ClientLayout::toolbar() const {
     return {280 + (width - 280 - 340.f) * .5f, 100, 340, 64};
 }
 Rect ClientLayout::colorField() const {
-    return {22, 614, 150, 34};
+    return {22, 662, 150, 34};
 }
 std::vector<Button> ClientLayout::buttons(const ClientView &view) const {
     std::vector<Button> result{
-        {{22, 380, 228, 38},
+        {{22, 155, 228, 38},
+         "host",
+         view.hosting ? (view.stopHostArmed ? "Confirm stop" : "Stop server") : "Start server"},
+        {{22, 428, 228, 38},
          "connect",
          view.online || view.connecting || view.reconnect ? "Disconnect" : "Join / create room"},
-        {{22, 712, 108, 36}, "undo", "Undo"},
-        {{140, 712, 110, 36},
+        {{22, 760, 108, 36}, "undo", "Undo"},
+        {{140, 760, 110, 36},
          "clear",
          view.clearing     ? "Clearing..."
          : view.clearArmed ? "Confirm clear"
          : view.online     ? "Clear mine"
                            : "Clear board"},
-        {{22, 758, 108, 36}, "export", "Export"},
-        {{140, 758, 110, 36}, "import", "Import"},
-        {{22, 666, 40, 30}, "thinner", "-"},
-        {{210, 666, 40, 30}, "thicker", "+"},
-        {{182, 614, 68, 34}, "apply_color", "Apply"},
+        {{22, 806, 108, 36}, "export", "Export"},
+        {{140, 806, 110, 36}, "import", "Import"},
+        {{22, 714, 40, 30}, "thinner", "-"},
+        {{210, 714, 40, 30}, "thicker", "+"},
+        {{182, 662, 68, 34}, "apply_color", "Apply"},
         {{float(width - 164), 20, 138, 34}, "theme", view.darkTheme ? "Light theme" : "Dark theme"}};
     result.push_back({{float(width - 166), 110, 140, 36}, "grid", "Grid  G", view.showGrid});
     if (view.online && view.localShapeCount > 0)
@@ -62,7 +66,7 @@ std::vector<Button> ClientLayout::buttons(const ClientView &view) const {
     const auto &colors = inkColors;
     for (std::size_t i = 0; i < colors.size(); ++i)
         result.push_back(
-            {{22.f + static_cast<float>(i % 6) * 38, 538.f + static_cast<float>(i / 6) * 36, 32, 28},
+            {{22.f + static_cast<float>(i % 6) * 38, 586.f + static_cast<float>(i / 6) * 36, 32, 28},
              "color" + std::to_string(i),
              "",
              view.color == colors[i]});
@@ -76,6 +80,7 @@ bool Renderer::init() {
           "/System/Library/Fonts/Supplemental/Arial.ttf"}) {
         if (canvas_.setFont(font, 16)) {
             hasFont_ = true;
+            fontPath_ = font;
             break;
         }
     }
@@ -162,12 +167,16 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     text("S Y N C C A N V A S", 22, 42, accent);
     text("Ideas, on the same page.", 22, 68, muted);
     const char *labels[]{"SERVER", "PORT", "ROOM NAME (required)", "YOUR NAME", "ACCESS KEY"};
-    const bool fieldsLocked = view.online || view.connecting || view.reconnect;
     for (int i = 0; i < 5; ++i) {
+        const bool fieldsLocked = view.online || view.connecting || view.reconnect ||
+                                  (view.hosting && (i == 0 || i == 1 || i == 4));
         auto box = layout.field(i);
         text(labels[i], box.x, box.y - 9, muted);
         canvas_.setFillColor(Color::hex(view.activeField == i ? selection : fieldColor));
-        canvas_.fillRoundedRect(box.x, box.y, box.w, box.h, 5);
+        canvas_.fillRoundedRect(box.x, box.y, box.w, box.h, 8);
+        canvas_.setStrokeColor(Color::hex(view.activeField == i && !fieldsLocked ? accent : border));
+        canvas_.setLineWidth(view.activeField == i && !fieldsLocked ? 1.5f : 1.f);
+        canvas_.strokeRoundedRect(box.x, box.y, box.w, box.h, 8);
         auto value = view.fields[i];
         const bool placeholder = value.empty() && view.activeField != i && (i == 2 || i == 4);
         if (i == 4 && !value.empty())
@@ -184,11 +193,20 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
         text(value + (!fieldsLocked && view.activeField == i ? "|" : ""), box.x + 10, box.y + 23,
              fieldsLocked || placeholder ? muted : textColor);
     }
-    text("DRAWING TOOL", 22, 447, muted);
+    canvas_.setFillColor(Color::hex(view.hosting ? 0x2f9e44U : muted));
+    canvas_.fillCircle(305, 89, 3);
+    text(view.hostStatus, 316, 95, view.hosting ? accent : muted);
+    canvas_.setStrokeColor(Color::hex(border));
+    canvas_.setLineWidth(1);
+    canvas_.beginPath();
+    canvas_.moveTo(22, 480);
+    canvas_.lineTo(250, 480);
+    canvas_.stroke();
+    text("DRAWING TOOL", 22, 495, muted);
     for (const auto &tool : drawingTools)
         if (tool.kind == (view.hoveredTool.empty() ? view.tool : view.hoveredTool))
-            text(std::string(tool.label) + "  (" + tool.shortcut + ")", 22, 479, textColor);
-    text("Choose above, or press 1-6", 22, 504, muted);
+            text(std::string(tool.label) + "  (" + tool.shortcut + ")", 22, 527, textColor);
+    text("Choose above, or press 1-6", 22, 552, muted);
     const auto bar = layout.toolbar();
     canvas_.setFillColor(Color::hex(view.darkTheme ? 0x080d17 : 0xe9e8f0));
     canvas_.fillRoundedRect(bar.x - 2, bar.y + 3, bar.w + 4, bar.h, 12);
@@ -197,32 +215,71 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     canvas_.setStrokeColor(Color::hex(border));
     canvas_.setLineWidth(1);
     canvas_.strokeRoundedRect(bar.x, bar.y, bar.w, bar.h, 12);
-    text("STROKE COLOR", 22, 526, muted);
+    text("STROKE COLOR", 22, 574, muted);
     const auto &colors = inkColors;
     for (const auto &button : layout.buttons(view)) {
         const auto &b = button.bounds;
         const bool toolButton = validDrawingTool(button.action);
+        const bool hovered = button.enabled && view.hoveredButton == button.action;
+        const bool pressed = button.enabled && view.pressedButton == button.action;
         bool swatch = button.action.starts_with("color");
         auto color = swatch            ? colors[static_cast<std::size_t>(std::stoul(button.action.substr(5)))]
                      : button.selected ? selection
                                        : fieldColor;
+        if (!toolButton && !swatch) {
+            const bool primary =
+                button.action == "connect" && !view.online && !view.connecting && !view.reconnect;
+            const bool danger = (button.action == "host" && view.hosting) ||
+                                (button.action == "connect" && !primary) ||
+                                (button.action == "clear" && view.clearArmed);
+            const auto fill = primary           ? (view.darkTheme ? 0x8c76edU : 0x6965dbU)
+                              : danger          ? (view.darkTheme ? 0x3e2834U : 0xfff1f2U)
+                              : button.selected ? selection
+                                                : panel;
+            const auto hoverFill = primary  ? (view.darkTheme ? 0x9e8af5U : 0x5954cbU)
+                                   : danger ? (view.darkTheme ? 0x55303fU : 0xffe1e5U)
+                                            : (view.darkTheme ? 0x2c3750U : 0xf1f0ffU);
+            const auto pressFill = primary  ? (view.darkTheme ? 0x7861d7U : 0x4c47b5U)
+                                   : danger ? (view.darkTheme ? 0x68394aU : 0xffcdd5U)
+                                            : selection;
+            const auto outline = primary ? fill : danger ? (view.darkTheme ? 0x704354U : 0xf5bec9U) : border;
+            const auto labelInk = primary  ? (view.darkTheme ? 0x171325U : 0xffffffU)
+                                  : danger ? (view.darkTheme ? 0xffa7b7U : 0xb42343U)
+                                           : textColor;
+            if (button.action == "connect" || button.action == "host") {
+                canvas_.setFillColor(Color::hex(view.darkTheme ? 0x0e1420 : 0xe9e8f4));
+                canvas_.fillRoundedRect(b.x, b.y + (pressed ? 1 : 3), b.w, b.h, 10);
+            }
+            vectorgl::ui::Button widget;
+            widget.setBounds(b.x, b.y, b.w, b.h);
+            widget.setText(button.label);
+            widget.setFont(fontPath_, 16);
+            auto &style = widget.style();
+            style.cornerRadius = 10;
+            style.fillColor = Color::hex(fill);
+            style.hoverFillColor = Color::hex(hoverFill);
+            style.pressedFillColor = Color::hex(pressFill);
+            style.borderColor = Color::hex(hovered && !primary && !danger ? accent : outline);
+            style.textColor = Color::hex(labelInk);
+            widget.setHovered(hovered);
+            if (pressed)
+                widget.handlePointerDown(b.x + 1, b.y + 1);
+            widget.render(canvas_);
+            continue;
+        }
         if (toolButton)
-            color = button.selected ? selection : view.hoveredTool == button.action ? border : panel;
-        if (button.action == "connect")
-            color = view.online ? (view.darkTheme ? 0x264b42U : 0xd3f9d8U) : selection;
-        if (button.action == "clear" && view.clearArmed)
-            color = view.darkTheme ? 0x773b47 : 0xffd7dc;
+            color = pressed ? selection : button.selected ? selection : hovered ? fieldColor : panel;
         canvas_.setFillColor(Color::hex(color));
-        canvas_.fillRoundedRect(b.x, b.y, b.w, b.h, 5);
+        canvas_.fillRoundedRect(b.x, b.y, b.w, b.h, 8);
         if (swatch) {
-            canvas_.setStrokeColor(Color::hex(border));
+            canvas_.setStrokeColor(Color::hex(hovered ? accent : border));
             canvas_.setLineWidth(1);
-            canvas_.strokeRoundedRect(b.x, b.y, b.w, b.h, 5);
+            canvas_.strokeRoundedRect(b.x, b.y, b.w, b.h, 8);
         }
         if (swatch && button.selected) {
             canvas_.setStrokeColor(Color::hex(accent));
             canvas_.setLineWidth(2);
-            canvas_.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+            canvas_.strokeRoundedRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6, 10);
         }
         if (toolButton) {
             Shape icon;
@@ -258,8 +315,8 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     canvas_.setStrokeColor(Color::hex(border));
     canvas_.setLineWidth(1);
     canvas_.strokeRoundedRect(colorBox.x + 117, colorBox.y + 8, 24, 18, 3);
-    text("Width  " + std::to_string(int(view.strokeWidth)) + " px", 80, 687, textColor);
-    text("Ctrl+Z undo   Ctrl+S export", 22, 824, muted);
+    text("Width  " + std::to_string(int(view.strokeWidth)) + " px", 80, 735, textColor);
+    text("Ctrl+Z undo   Ctrl+S export", 22, 872, muted);
     text(view.online ? (view.accessControlled ? "Key required / plain TCP" : "Open server / plain TCP")
                      : "Local / export to save",
          22, float(layout.height - 46), muted);

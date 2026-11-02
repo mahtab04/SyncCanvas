@@ -16,6 +16,7 @@ A ready-to-import diagram is included in `examples/network-board.json`. Copy it 
 - Shared freehand strokes, rectangles, diamonds, ellipses, arrows, and lines with 12 preset stroke colors, custom RGB hex colors, and adjustable widths.
 - Named rooms, live participant cursors, and per-session undo of your own shapes.
 - Optional server access key, masked entry, and a fixed join deadline.
+- Start/stop a server inside the desktop app, with LAN hosting enabled by default.
 - Shift-constrained geometry, light/dark themes, a grid toggle, and select-all/paste for connection fields.
 - Confirmed local clearing with Undo recovery, and owner-limited clearing in shared rooms.
 - Server-assigned IDs and monotonically increasing board revisions.
@@ -80,7 +81,8 @@ cmake --build --preset release --target synccanvas_client
 
 Fedora font lookup includes `/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf`.
 The package paths are documented by [Fedora](https://packages.fedoraproject.org/pkgs/dejavu-fonts/dejavu-sans-fonts/fedora-43.html).
-For a Windows-hosted room, run the Windows server with `--bind 0.0.0.0`, then enter
+For a Windows-hosted room, click **Start server** in the Windows
+client (or run the standalone server with `--bind 0.0.0.0`), then enter
 its LAN IPv4 address, the same port, and the same chosen room name in both clients.
 Use the configured access key if required. Windows executables do not run as native
 Fedora applications; build the Linux client above. Fedora runtime behavior has not
@@ -97,7 +99,28 @@ This build needs no graphics libraries or display.
 
 ### Connecting over a trusted LAN
 
-The server binds to loopback by default. To explicitly listen on other interfaces:
+You can host directly from the desktop client:
+
+1. Set the port and optional Access key before starting. Desktop hosting accepts
+   connections from other computers on your network by default.
+2. Click **Start server**. The client points itself at `127.0.0.1`; hosting does
+   not join a room or upload your local drawing.
+3. Enter a room name and click **Join / create room**. Other computers use the
+   host PC's LAN IP, the same port, room name, and access key.
+4. **Stop server** asks for confirmation within five seconds. It saves dirty rooms
+   and disconnects everyone on this host. Closing the host window also stops it;
+   Disconnect alone leaves the server running. Other windows' or standalone servers
+   are never stopped by these controls.
+
+Hosted rooms are stored separately from standalone server archives, under
+`%LOCALAPPDATA%/SyncCanvas/hosted-boards/<port>` on Windows and
+`$XDG_STATE_HOME/synccanvas/hosted-boards/<port>` on Linux (defaulting to
+`~/.local/state/synccanvas/hosted-boards/<port>`). Restart with the same port to
+reuse them. Port, server destination, and access key stay fixed while
+hosting; stop first to change them. A port already in use reports a startup error.
+Hosting accepts connections on all IPv4 interfaces. The client does not configure the firewall.
+
+The standalone server binds to loopback by default. To listen on other interfaces:
 
 ~~~sh
 synccanvas_server --bind 0.0.0.0 --port 8765 --data boards

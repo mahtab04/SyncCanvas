@@ -103,3 +103,41 @@ with its original RGB value. This verifies the protocol used by Clear mine; the
 complete room-clear UI flow was not manually exercised. A dark-mode screenshot is
 included in the README. Theme preferences are session-only. Autosave/recovery work
 was deferred at the user's request; local work still requires Export before closing.
+
+## Desktop hosting (November 2, 2026)
+
+The MSVC Release client/server build passed. Native UI checks covered Start server,
+explicit room selection and joining the embedded server, stop confirmation and
+timeout, stopping while joined, and restoration of Local Studio. The final sidebar
+layout was inspected after correcting label spacing. A real-TCP peer submitted a
+drawing to the embedded server; stopping closed the listener, restarting restored
+the persisted shape, and closing the host window released the listener. Starting a
+standalone server on the occupied port failed without disturbing the embedded host.
+Formatting and diff whitespace checks passed. No repository test folder was added.
+
+LAN scope, access-key wiring, and failure paths were reviewed in code; a physical
+Windows/Fedora LAN session and disk-full behavior were not exercised in this pass.
+The standalone executable remains available for hosting beyond a desktop session.
+
+## Button design refinement (November 2, 2026)
+
+Action buttons now render through VectorGL's ui::Button widget with centered font
+metrics, rounded borders, hover/pressed fills, and distinct primary/destructive
+styles. Hosting uses one full-width Start server / Stop server control; Allow LAN
+connections is a separate checkbox, disabled while hosting. Server status appears
+above the canvas. Actions activate only after press and release inside the same
+button; dragging away or losing focus cancels the pending click.
+
+The Release build passed. Native light/dark review verified layout, starting and
+confirmed stopping through the redesigned button, and drag-away cancellation.
+The review host was stopped afterward. LAN scope was not changed during UI review.
+
+## LAN hosting by default (November 2, 2026)
+
+The desktop host now always binds 0.0.0.0; the LAN checkbox, view flag, action,
+and checkbox renderer were removed. The standalone executable retains its loopback
+default. The Release build and formatting/whitespace checks passed. Native review
+confirmed the checkbox is absent and Start changes to Stop server with Hosting on
+LAN status. Windows displayed its firewall permission dialog; it was left for the
+user rather than handled automatically. Cross-PC connectivity still depends on
+that firewall permission and was not verified in this pass.

@@ -1,6 +1,14 @@
 # Security and deployment scope
 
-SyncCanvas is intended for local development and trusted networks. The default server bind is 127.0.0.1. Binding to another interface is an explicit administrator choice.
+SyncCanvas is intended for local development and trusted networks. The standalone server defaults to 127.0.0.1. Desktop Start server listens on all IPv4 interfaces (0.0.0.0) by default.
+
+The desktop's Start server uses the same server and security limits and accepts LAN
+connections by default. There is no LAN checkbox. The optional Access key
+field configures the embedded server before startup and remains fixed until Stop.
+Hosting does not alter firewall rules. Closing the host window ends all its sessions.
+Embedded archives live in a per-user, per-port directory separate from standalone
+archives; do not run another writer against it. Stop reports final save failures,
+but still shuts down, so storage health and backups remain the operator's responsibility.
 
 This version has **no TLS, user accounts, per-room passwords, or access-control lists**. An optional server-wide shared access key gates the join operation. Without a configured key, anyone able to connect can join any known room name, read its board, and append shapes. With a key, every key holder can still access every room. Display names are not verified identities. Undo is restricted to shapes owned by the current connection, but this is a session rule rather than account-level authorization.
 
@@ -39,4 +47,4 @@ subject to that inbound-client budget. These are per-connection controls, not gl
 or per-IP protection against a distributed attack.
 
 Malformed operation fields receive a generic error. Archive failures do not expose
-local file paths or parser details to peers. Loopback binding remains the default.
+local file paths or parser details to peers. The standalone executable retains its loopback default.

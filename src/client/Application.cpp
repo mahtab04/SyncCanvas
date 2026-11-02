@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <glad/gl.h>
 #include <iostream>
 #include <utility>
@@ -22,6 +23,71 @@ bool allowedFieldCharacter(int index, unsigned c) {
 } // namespace
 Application::Application(std::array<std::string, 5> fields) {
     view_.fields = std::move(fields);
+}
+bool Application::fieldEditable(int index) const {
+    return !view_.online && !view_.connecting && !view_.reconnect &&
+           !(view_.hosting && (index == 0 || index == 1 || index == 4));
+}
+void Application::toggleServer() {
+    if (view_.hosting) {
+        if (!view_.stopHostArmed || glfwGetTime() > stopHostDeadline_) {
+            view_.stopHostArmed = true;
+            stopHostDeadline_ = glfwGetTime() + 5;
+            view_.status = "Stop hosting? Everyone on this server will disconnect. Click Confirm stop.";
+            return;
+        }
+        view_.stopHostArmed = false;
+        // Hosting sets and locks the destination to our own loopback listener.
+        const bool leavingRoom = view_.online || view_.connecting || view_.reconnect;
+        if (leavingRoom)
+            action("connect");
+        const bool saved = hostedServer_.stop();
+        view_.hosting = false;
+        view_.hostStatus = "Server stopped";
+        view_.status = saved ? "Server stopped. Saved rooms are kept."
+                             : "Server stopped, but some room saves failed. Check the data directory.";
+        if (leavingRoom)
+            offlineReason_ = view_.status;
+        return;
+    }
+    if (view_.online || view_.connecting || view_.reconnect) {
+        view_.status = "Disconnect before starting a server on this PC.";
+        return;
+    }
+    try {
+        std::size_t used = 0;
+        const int port = std::stoi(view_.fields[1], &used);
+        if (used != view_.fields[1].size() || port < 1 || port > 65535)
+            throw std::invalid_argument("Port must be between 1 and 65535.");
+        if (!view_.fields[4].empty() &&
+            (view_.fields[4].size() < 16 || !validIdentifier(view_.fields[4], 128)))
+            throw std::invalid_argument("Access key: 16-128 letters, numbers, _ or -. Or leave blank.");
+        std::filesystem::path root;
+#ifdef _WIN32
+        if (const char *state = std::getenv("LOCALAPPDATA"); state && *state)
+            root = std::filesystem::path(state) / "SyncCanvas";
+#else
+        if (const char *state = std::getenv("XDG_STATE_HOME"); state && *state)
+            root = std::filesystem::path(state) / "synccanvas";
+        else if (const char *home = std::getenv("HOME"); home && *home)
+            root = std::filesystem::path(home) / ".local/state/synccanvas";
+#endif
+        if (root.empty() || !root.is_absolute())
+            throw std::runtime_error("Cannot find an absolute per-user storage directory for hosting.");
+        ServerConfig config;
+        config.address = "0.0.0.0";
+        config.port = static_cast<unsigned short>(port);
+        config.accessKey = view_.fields[4];
+        config.dataDirectory = root / "hosted-boards" / std::to_string(port);
+        hostedServer_.start(std::move(config));
+        view_.hosting = true;
+        view_.fields[0] = "127.0.0.1";
+        view_.activeField = -1;
+        view_.hostStatus = "Hosting on LAN : " + std::to_string(port);
+        view_.status = "Server started. Join a room; other PCs use this PC's LAN IP and the same port.";
+    } catch (const std::exception &error) {
+        view_.status = "Could not start server (check port/storage): " + std::string(error.what());
+    }
 }
 bool Application::pressed(int key) {
     bool down = glfwGetKey(window_, key) == GLFW_PRESS;
@@ -43,7 +109,7 @@ void Application::character(unsigned codepoint) {
         }
         return;
     }
-    if (view_.activeField < 0 || view_.online || view_.connecting || view_.reconnect)
+    if (view_.activeField < 0 || !fieldEditable(view_.activeField))
         return;
     auto &field = view_.fields[view_.activeField];
     const auto limit = fieldLimit(view_.activeField);
@@ -92,6 +158,12 @@ void Application::connect() {
     network_.connect(view_.fields[0], view_.fields[1], view_.fields[2], view_.fields[3], view_.fields[4]);
 }
 void Application::action(const std::string &actionName) {
+    if (actionName != "host")
+        view_.stopHostArmed = false;
+    if (actionName == "host") {
+        toggleServer();
+        return;
+    }
     if (actionName != "clear" && view_.clearArmed) {
         view_.clearArmed = false;
         view_.status = "Clear canceled. Board unchanged.";
@@ -444,6 +516,12 @@ void Application::processEvents() {
     }
 }
 void Application::input() {
+    if (view_.stopHostArmed && glfwGetTime() > stopHostDeadline_)
+        view_.stopHostArmed = false;
+    if (view_.hosting && !hostedServer_.running() && view_.hostStatus != "Host failed / click Stop server") {
+        view_.hostStatus = "Host failed / click Stop server";
+        view_.status = hostedServer_.error();
+    }
     const double now = glfwGetTime();
     if (view_.clearArmed && now > clearDeadline_) {
         view_.clearArmed = false;
@@ -462,7 +540,10 @@ void Application::input() {
         lastImport_ = now;
     }
     if (pressed(GLFW_KEY_ESCAPE)) {
-        if (view_.draft)
+        if (view_.stopHostArmed) {
+            view_.stopHostArmed = false;
+            view_.status = "Server stop canceled. Hosting continues.";
+        } else if (view_.draft)
             cancelDraft();
         else if (view_.clearArmed) {
             view_.clearArmed = false;
@@ -476,7 +557,9 @@ void Application::input() {
     }
     if (pressed(GLFW_KEY_TAB) && !view_.editingColor && !view_.online && !view_.connecting &&
         !view_.reconnect) {
-        view_.activeField = (view_.activeField + 1) % 5;
+        do {
+            view_.activeField = (view_.activeField + 1) % 5;
+        } while (!fieldEditable(view_.activeField));
         view_.fieldSelected = true;
     }
     if (pressed(GLFW_KEY_BACKSPACE)) {
@@ -486,7 +569,7 @@ void Application::input() {
             else if (!view_.colorText.empty())
                 view_.colorText.pop_back();
             view_.colorSelected = false;
-        } else if (view_.activeField >= 0 && !view_.online && !view_.connecting && !view_.reconnect) {
+        } else if (view_.activeField >= 0 && fieldEditable(view_.activeField)) {
             auto &field = view_.fields[view_.activeField];
             if (view_.fieldSelected)
                 field.clear();
@@ -529,9 +612,13 @@ void Application::input() {
         return;
     float x = float(mx * fw / ww), y = float(my * fh / hh);
     view_.hoveredTool.clear();
+    view_.hoveredButton.clear();
     for (const auto &button : layout_.buttons(view_))
-        if (validDrawingTool(button.action) && button.bounds.contains(x, y))
-            view_.hoveredTool = button.action;
+        if (button.enabled && button.bounds.contains(x, y)) {
+            view_.hoveredButton = button.action;
+            if (validDrawingTool(button.action))
+                view_.hoveredTool = button.action;
+        }
     if (view_.online && view_.draft && previewDirty_ && now - lastPreview_ >= .05) {
         network_.send({{"type", "preview"}, {"shape", shapeJson(*view_.draft)}});
         lastPreview_ = now;
@@ -551,7 +638,24 @@ void Application::pointer(double mx, double my, int phase) {
         return;
     layout_.resize(fw, fh);
     float x = float(mx * fw / ww), y = float(my * fh / hh);
+    if (phase == 2 && !view_.pressedButton.empty()) {
+        const auto pressedAction = std::exchange(view_.pressedButton, {});
+        for (const auto &button : layout_.buttons(view_))
+            if (button.enabled && button.action == pressedAction && button.bounds.contains(x, y)) {
+                action(button.action);
+                break;
+            }
+        return;
+    }
     if (phase == 1) {
+        view_.pressedButton.clear();
+        if (view_.stopHostArmed) {
+            const auto buttons = layout_.buttons(view_);
+            if (std::none_of(buttons.begin(), buttons.end(), [x, y](const Button &button) {
+                    return button.action == "host" && button.bounds.contains(x, y);
+                }))
+                view_.stopHostArmed = false;
+        }
         if (view_.clearArmed) {
             const auto buttons = layout_.buttons(view_);
             if (std::none_of(buttons.begin(), buttons.end(), [x, y](const Button &button) {
@@ -568,7 +672,7 @@ void Application::pointer(double mx, double my, int phase) {
         }
         for (int i = 0; i < 5; ++i)
             if (layout_.field(i).contains(x, y)) {
-                if (!view_.online && !view_.connecting && !view_.reconnect) {
+                if (fieldEditable(i)) {
                     view_.activeField = i;
                     view_.editingColor = false;
                     view_.fieldSelected = false;
@@ -576,7 +680,7 @@ void Application::pointer(double mx, double my, int phase) {
                         view_.status =
                             "Choose a room: an existing name joins its board; a new name creates one.";
                 } else
-                    view_.status = "Disconnect before changing the server, room, or name.";
+                    view_.status = "Disconnect or stop hosting before changing this field.";
                 handled = true;
             }
         if (!handled) {
@@ -585,7 +689,8 @@ void Application::pointer(double mx, double my, int phase) {
         }
         for (const auto &button : layout_.buttons(view_))
             if (button.bounds.contains(x, y)) {
-                action(button.action);
+                if (button.enabled)
+                    view_.pressedButton = button.action;
                 handled = true;
                 break;
             }
@@ -671,11 +776,16 @@ int Application::run() {
             self->pointer(x, y, 0);
     });
     glfwSetWindowFocusCallback(window_, [](GLFWwindow *window, int focused) {
-        if (!focused)
-            static_cast<Application *>(glfwGetWindowUserPointer(window))->cancelDraft();
+        if (!focused) {
+            auto *self = static_cast<Application *>(glfwGetWindowUserPointer(window));
+            self->cancelDraft();
+            self->view_.pressedButton.clear();
+        }
     });
     glfwSetKeyCallback(window_, [](GLFWwindow *window, int key, int, int state, int mods) {
         auto *self = static_cast<Application *>(glfwGetWindowUserPointer(window));
+        if (state == GLFW_PRESS && key != GLFW_KEY_ESCAPE)
+            self->view_.stopHostArmed = false;
         if (state == GLFW_PRESS && key != GLFW_KEY_ESCAPE)
             self->view_.clearArmed = false;
         if (key >= 0 && key < 350 &&
@@ -707,8 +817,7 @@ int Application::run() {
                 }
             }
         }
-        const bool editable = self->view_.activeField >= 0 && !self->view_.online &&
-                              !self->view_.connecting && !self->view_.reconnect;
+        const bool editable = self->view_.activeField >= 0 && self->fieldEditable(self->view_.activeField);
         if (editable && state == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
             if (key == GLFW_KEY_A)
                 self->view_.fieldSelected = true;
@@ -773,6 +882,8 @@ int Application::run() {
         glfwSwapBuffers(window_);
     }
     network_.disconnect();
+    if (!hostedServer_.stop())
+        std::cerr << "Hosted server stopped with unsaved room changes.\n";
     renderer_.destroy();
     glfwDestroyWindow(window_);
     glfwTerminate();
