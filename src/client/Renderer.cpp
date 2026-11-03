@@ -52,6 +52,8 @@ std::vector<Button> ClientLayout::buttons(const ClientView &view) const {
         {{182, 662, 68, 34}, "apply_color", "Apply"},
         {{float(width - 164), 20, 138, 34}, "theme", view.darkTheme ? "Light theme" : "Dark theme"}};
     result.push_back({{float(width - 166), 110, 140, 36}, "grid", "Grid  G", view.showGrid});
+    if (view.autosaveExitBlocked)
+        result.push_back({{float(width - 382), 20, 204, 34}, "exit_unsaved", "Exit without saving"});
     if (view.online && view.localShapeCount > 0)
         result.push_back(
             {{300, 110, 180, 36}, "share_local", "Add local (" + std::to_string(view.localShapeCount) + ")"});
@@ -229,9 +231,9 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
         if (!toolButton && !swatch) {
             const bool primary =
                 button.action == "connect" && !view.online && !view.connecting && !view.reconnect;
-            const bool danger = (button.action == "host" && view.hosting) ||
-                                (button.action == "connect" && !primary) ||
-                                (button.action == "clear" && view.clearArmed);
+            const bool danger =
+                (button.action == "host" && view.hosting) || (button.action == "connect" && !primary) ||
+                (button.action == "clear" && view.clearArmed) || button.action == "exit_unsaved";
             const auto fill = primary           ? (view.darkTheme ? 0x8c76edU : 0x6965dbU)
                               : danger          ? (view.darkTheme ? 0x3e2834U : 0xfff1f2U)
                               : button.selected ? selection
@@ -317,14 +319,14 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
     canvas_.strokeRoundedRect(colorBox.x + 117, colorBox.y + 8, 24, 18, 3);
     text("Width  " + std::to_string(int(view.strokeWidth)) + " px", 80, 735, textColor);
     text("Ctrl+Z undo   Ctrl+S export", 22, 872, muted);
+    text(view.localSaveStatus, 22, float(layout.height - 46), muted);
     text(view.online ? (view.accessControlled ? "Key required / plain TCP" : "Open server / plain TCP")
-                     : "Local / export to save",
-         22, float(layout.height - 46), muted);
-    text("Draw. Share. Think together.", 22, float(layout.height - 23), muted);
+                     : "Draw. Share. Think together.",
+         22, float(layout.height - 23), muted);
     const bool joining = view.connecting || (view.reconnect && !view.online);
     text(view.online ? "LIVE ROOM" : joining ? "JOINING ROOM" : "LOCAL STUDIO", 300, 41, accent);
-    text(view.online || joining ? "Room / " + view.fields[2] : "Your local board / Export to save", 300, 72,
-         textColor);
+    text(view.online || joining ? "Room / " + view.fields[2] : "Your local board / " + view.localSaveStatus,
+         300, 72, textColor);
     text((view.online ? std::to_string(view.peers.size()) + " collaborators    |    " : "") +
              std::to_string(view.shapes.size()) + (view.online ? " room shapes" : " local shapes"),
          float(layout.width - 370), 72, muted);
@@ -366,7 +368,7 @@ void Renderer::draw(const ClientView &view, const ClientLayout &layout) {
                                 ? "Draw together. Use Add local to copy your offline sketch into this room."
                                 : "Choose a tool and draw. Invite someone to the same room.")
              : joining   ? "Loading the room. Your local board is kept separate."
-                         : "Start drawing here. No connection needed. Export to save your work.",
+                         : "Start drawing here. No connection needed.",
              300, 375, muted);
     }
     canvas_.restore();

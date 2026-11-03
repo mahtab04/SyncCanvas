@@ -28,9 +28,10 @@ struct ClientView {
     bool clearArmed = false, clearing = false;
     bool hosting = false, stopHostArmed = false;
     std::string hostStatus = "Server stopped";
+    std::string localSaveStatus = "Local autosave unavailable";
+    bool autosaveExitBlocked = false;
     std::string colorText = "1E1E1E";
-    std::string tool = "pen", status = "Draw locally now. Export to save, or join a room to collaborate.",
-                selfId;
+    std::string tool = "pen", status = "Draw locally now, or join a room to collaborate.", selfId;
     std::size_t localShapeCount = 0;
     std::string hoveredTool;
     std::string hoveredButton, pressedButton;

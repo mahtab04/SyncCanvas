@@ -74,7 +74,7 @@ ordinary draw operations, with fresh IDs and ownership assigned by the server. T
 is an explicit additive copy, not automatic merge/replay. Interruption can leave a
 partial room copy, and repeating the action can duplicate shapes. Local originals
 remain unchanged. Export saves whichever board is visible using atomic replacement;
-local work is otherwise memory-only and must be exported before closing.
+local work also has independent autosave and recovery.
 
 ## Explicit room selection
 
@@ -100,3 +100,26 @@ at most 40 times per second, with one outstanding acknowledgement at a time. It
 accounts for late accepted shapes, blocks simultaneous drawing/imports, and stops
 on errors or disconnect. Other owners' shapes and archived shapes are not cleared.
 No protocol extension or server-wide destructive clear operation was introduced.
+
+## Local autosave and recovery
+
+LocalAutosave owns a worker thread and an OS-locked recovery slot under per-user
+state storage. Startup claims the most recent valid, unlocked board file; busy slots
+belong to other live windows and are skipped. Invalid files remain untouched and
+produce a warning, with fallback to another valid slot. A new window without an
+available recovery gets a uniquely created slot. Windows uses an exclusive file
+handle and POSIX uses flock; process exit/crash releases the lock. Recovered shapes
+are validated and reassigned local ownership so Undo works. No credential or network
+metadata is saved.
+
+Application submits snapshots after local draw, Undo/restore, import, or clear.
+At most one in-flight and one latest pending Board are retained. The worker coalesces
+updates over two seconds and serializes/replaces board.json through DocumentFile.
+Empty boards are saved too, so a cleared board does not resurrect after reopening.
+Room events never enter this queue. Normal shutdown requests an immediate attempt
+at the latest submitted generation. Failed writes retain the previous atomic save,
+retry in the background, and keep the window open on failed close. Export then saves
+the local Board even if a room is visible; Exit without saving is an explicit escape.
+Unused fresh slots are removed on normal shutdown; corrupt or saved files remain.
+The format is the portable board document, not a versioned history or a power-loss
+journal. Uncommitted drafts, clear-Undo backups, and UI preferences are not recovered.

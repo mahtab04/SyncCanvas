@@ -1,6 +1,7 @@
 #pragma once
 #include "ClientView.hpp"
 #include "HostedServer.hpp"
+#include "LocalAutosave.hpp"
 #include "NetworkClient.hpp"
 #include <deque>
 #include <filesystem>
@@ -15,6 +16,8 @@ class Application {
     NetworkClient network_;
     HostedServer hostedServer_;
     Board localBoard_;
+    std::unique_ptr<LocalAutosave> autosave_;
+    bool exitWithoutSave_ = false;
     ClientView view_;
     ClientLayout layout_;
     Renderer renderer_;
@@ -54,5 +57,6 @@ class Application {
     void character(unsigned codepoint);
     bool fieldEditable(int index) const;
     void toggleServer();
+    void localChanged();
 };
 } // namespace synccanvas

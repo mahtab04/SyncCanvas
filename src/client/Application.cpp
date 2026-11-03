@@ -24,6 +24,12 @@ bool allowedFieldCharacter(int index, unsigned c) {
 Application::Application(std::array<std::string, 5> fields) {
     view_.fields = std::move(fields);
 }
+void Application::localChanged() {
+    if (autosave_) {
+        autosave_->submit(localBoard_);
+        view_.localSaveStatus = autosave_->status();
+    }
+}
 bool Application::fieldEditable(int index) const {
     return !view_.online && !view_.connecting && !view_.reconnect &&
            !(view_.hosting && (index == 0 || index == 1 || index == 4));
@@ -158,6 +164,11 @@ void Application::connect() {
     network_.connect(view_.fields[0], view_.fields[1], view_.fields[2], view_.fields[3], view_.fields[4]);
 }
 void Application::action(const std::string &actionName) {
+    if (actionName == "exit_unsaved" && view_.autosaveExitBlocked) {
+        exitWithoutSave_ = true;
+        glfwSetWindowShouldClose(window_, true);
+        return;
+    }
     if (actionName != "host")
         view_.stopHostArmed = false;
     if (actionName == "host") {
@@ -214,7 +225,8 @@ void Application::action(const std::string &actionName) {
                 clearedLocalBackup_.reset();
             }
             resetBoardView();
-            view_.status = "Local undo. Export to save your board.";
+            localChanged();
+            view_.status = "Local undo.";
         }
     } else if (actionName == "share_local") {
         shareLocalBoard();
@@ -240,6 +252,12 @@ void Application::action(const std::string &actionName) {
 }
 void Application::exportBoard() {
     try {
+        if (view_.autosaveExitBlocked) {
+            writeDocumentFile(exportPath_, localBoard_.document(), 2);
+            view_.status =
+                "Exported the local board to board.json. Retry closing or choose Exit without saving.";
+            return;
+        }
         if (snapshotting_ || view_.connecting || (view_.reconnect && !view_.online))
             throw std::runtime_error("Wait for the room to load, or disconnect to export your local board");
         Json shapes = Json::array();
@@ -269,6 +287,7 @@ void Application::importBoard() {
                 combined.add(shape, "local");
             localBoard_ = std::move(combined);
             resetBoardView();
+            localChanged();
             view_.status = "Imported into your local board. Nothing was sent to a room.";
             return;
         }
@@ -301,7 +320,8 @@ bool Application::commitShape(const Shape &shape) {
         view_.shapes = localBoard_.shapes();
         view_.revision = localBoard_.revision();
         view_.localShapeCount = localBoard_.shapes().size();
-        view_.status = "Drawing locally. Export to save; joining a room keeps this board separate.";
+        localChanged();
+        view_.status = "Drawing locally. Joining a room keeps this board separate.";
         return true;
     } catch (const std::exception &error) {
         view_.status = error.what();
@@ -364,6 +384,7 @@ void Application::clearBoard() {
         clearedLocalBackup_ = std::move(localBoard_);
         localBoard_ = Board{};
         resetBoardView();
+        localChanged();
         view_.status = "Local board cleared. Ctrl+Z restores the previous board.";
     }
 }
@@ -516,6 +537,11 @@ void Application::processEvents() {
     }
 }
 void Application::input() {
+    if (autosave_) {
+        view_.localSaveStatus = autosave_->status();
+        if (view_.localSaveStatus == "Local board saved")
+            view_.autosaveExitBlocked = false;
+    }
     if (view_.stopHostArmed && glfwGetTime() > stopHostDeadline_)
         view_.stopHostArmed = false;
     if (view_.hosting && !hostedServer_.running() && view_.hostStatus != "Host failed / click Stop server") {
@@ -864,7 +890,29 @@ int Application::run() {
         glfwTerminate();
         return 4;
     }
-    while (!glfwWindowShouldClose(window_)) {
+    try {
+        autosave_ = std::make_unique<LocalAutosave>(LocalAutosave::defaultDirectory());
+        localBoard_ = autosave_->recoveredBoard();
+        resetBoardView();
+        view_.localSaveStatus = autosave_->status();
+        if (autosave_->recovered())
+            view_.status = "Recovered your local board (" + std::to_string(localBoard_.shapes().size()) +
+                           " shapes). Continue drawing or join a room.";
+        if (!autosave_->recoveryWarning().empty())
+            view_.status = autosave_->recoveryWarning();
+    } catch (const std::exception &) {
+        view_.status = "Local autosave unavailable. Use Export to save your work.";
+    }
+    for (;;) {
+        if (glfwWindowShouldClose(window_)) {
+            const bool saved = autosave_ ? autosave_->flush() : localBoard_.shapes().empty();
+            if (saved || exitWithoutSave_)
+                break;
+            glfwSetWindowShouldClose(window_, false);
+            view_.autosaveExitBlocked = true;
+            view_.status =
+                "Autosave failed. Export your local board, retry closing, or choose Exit without saving.";
+        }
         glfwPollEvents();
         processEvents();
         int w, h;

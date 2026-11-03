@@ -141,3 +141,27 @@ confirmed the checkbox is absent and Start changes to Stop server with Hosting o
 LAN status. Windows displayed its firewall permission dialog; it was left for the
 user rather than handled automatically. Cross-PC connectivity still depends on
 that firewall permission and was not verified in this pass.
+
+## Local autosave and recovery (November 3, 2026)
+
+The Release client/server build passed with MSVC 19.52 after refreshing the ignored
+build cache for the installed Visual Studio Insiders toolchain. Project formatting
+and diff whitespace checks passed. One-off checks under ignored build/ verified:
+
+- Background save after the two-second coalescing interval, immediate final flush,
+  and preservation of the latest submitted snapshot.
+- Two simultaneously live instances used separate locked files.
+- Empty-board saves, rapid update coalescing, restored local Undo ownership, and
+  fallback past an invalid newest file without modifying it.
+- A forced atomic-replacement failure retained the previous valid file, exposed
+  failed status, and saved the latest drawing after retry.
+- Forced process termination released the OS lock and a new process recovered the
+  last saved board.
+
+Native UI review used an isolated per-user state directory under build/. Saving and
+Saved status were observed, and reopening restored the three-shape drawing with a
+recovery message. Additional review edits remained in the isolated recovery file.
+The final-save failure close guard and local Export fallback were reviewed in code;
+the complete failure/Exit-without-saving UI flow was not manually executed. POSIX
+locking and state-directory handling were reviewed, but Fedora runtime behavior
+was not exercised. No test folder or CTest configuration was added.

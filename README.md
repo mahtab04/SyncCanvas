@@ -12,7 +12,7 @@ A ready-to-import diagram is included in `examples/network-board.json`. Copy it 
 
 ## What it does
 
-- Offline local boards with undo, import/export, and explicit sharing into a room.
+- Offline local boards with autosave/recovery, undo, import/export, and explicit sharing into a room.
 - Shared freehand strokes, rectangles, diamonds, ellipses, arrows, and lines with 12 preset stroke colors, custom RGB hex colors, and adjustable widths.
 - Named rooms, live participant cursors, and per-session undo of your own shapes.
 - Optional server access key, masked entry, and a fixed join deadline.
@@ -137,13 +137,31 @@ the room snapshot is displayed separately. **Add local** explicitly adds a copy 
 your local shapes to the connected room, preserving the original. Disconnect returns
 to your local board. During reconnection, use Disconnect to resume local drawing.
 
-Use Export before closing to save local work to `board.json` in the client's working
-directory. Launch from a writable directory. Local work is not automatically saved,
-merged, or uploaded on connect. Clear board asks for a second click within five
+Local changes are autosaved in the background about two seconds after a change,
+with a final save when closing. Reopening restores the most recently saved local
+board not already open in another window. Each window locks its own recovery slot
+so simultaneous instances cannot overwrite each other. Recovered shapes support
+local Undo. Room snapshots never replace the local recovery file.
+
+The interface shows Saving, Saved, or a save failure. If the final save fails, the
+window stays open so you can retry or Export; Exit without saving is an explicit
+choice. Export remains available for a portable `board.json` in the client's working
+directory (launch from a writable directory). Local work is never automatically
+merged or uploaded on connect. Clear board asks for a second click within five
 seconds; Escape, timeout, or another action cancels it. Undo can restore the last
 cleared local board. In a room, Clear mine removes only your current session's
 shapes and waits for each server acknowledgement; other participants and archived
 shapes are preserved. Disconnect cancels any remaining clear requests.
+
+Recovery files live under `%LOCALAPPDATA%/SyncCanvas/recovery` on Windows and
+`$XDG_STATE_HOME/synccanvas/recovery` on Linux (default
+`~/.local/state/synccanvas/recovery`). If several closed windows have saved boards,
+open additional windows to recover the remaining available boards, newest first.
+Unreadable recovery files are preserved and reported; another valid slot can be
+restored. Recovery saves contain completed shapes, not an unfinished drag, local
+clear-Undo backups, theme/color preferences, credentials, or room snapshots.
+A crash may lose changes since the last completed save. Recovery is not a versioned
+backup; use Export for copies you want to keep.
 
 ### Optional access key
 
@@ -211,7 +229,7 @@ See [local validation](docs/VALIDATION.md) for historical build and interface ch
 - Undo ownership is tied to a live connection. Reconnecting gets a new identity; saved shapes load with archive ownership.
 - Autosave runs every two seconds on the server event loop; disk stalls can delay network work. A crash can lose changes since the last successful save.
 - Up to 128 connections, 32 loaded rooms, 32 participants per room, 1500 shapes and 40,000 points per board. Loaded rooms remain in memory until restart.
-- A reconnect replaces the visible room board with a server snapshot. The separate local board is kept in memory and never uploaded automatically. Local work must be exported before closing the app; local autosave is not implemented.
+- A reconnect replaces the visible room board with a server snapshot. The separate local board is kept in memory and never uploaded automatically. Local changes have separate background autosave and recovery; use Export for portable backups.
 - Each server is a single authoritative process; clustering and durable operation logs are future work.
 
 ## License and dependencies

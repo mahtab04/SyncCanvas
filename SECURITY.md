@@ -48,3 +48,13 @@ or per-IP protection against a distributed attack.
 
 Malformed operation fields receive a generic error. Archive failures do not expose
 local file paths or parser details to peers. The standalone executable retains its loopback default.
+
+## Local recovery storage
+
+Local autosave stores validated drawing geometry in per-user recovery directories,
+separate from hosted room archives. Files are plaintext, without access keys or
+connection settings. Protect the OS user account and use Export for backups. Each
+live window holds an OS lock on its slot; this prevents cooperating app instances
+from overwriting each other's local work, but is not an access-control boundary.
+Unreadable files are preserved rather than overwritten. A failed close save is
+reported and keeps the window open unless the user explicitly exits without saving.

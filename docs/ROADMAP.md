@@ -21,7 +21,8 @@ small set of predictable tools.
 
 Local drawing, local undo, transactional additive import, export, and explicit Add
 local copying are implemented. Local boards survive room switches in memory. Local
-autosave and automatic recovery after closing remain future work.
+autosave and recovery are implemented with per-window locking, background atomic
+saves, failure reporting, and a final save on close.
 
 ## Next: editing and navigation
 
